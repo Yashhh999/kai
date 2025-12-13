@@ -172,7 +172,7 @@ const ChatMessages = memo(function ChatMessages({
           onClose={closeViewOnceEmbed}
         />
       )}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4">
         {messages.length === 0 ? (
         <div className="flex items-center justify-center h-full">
           <p className="text-neutral-500 text-sm">Send a message to start</p>
@@ -183,7 +183,7 @@ const ChatMessages = memo(function ChatMessages({
             key={message.id}
             className={`flex ${message.isSent ? 'justify-end' : 'justify-start'}`}
           >
-            <div className="max-w-[70%]">
+            <div className="max-w-[85%] sm:max-w-[75%] md:max-w-[70%]">
               {!message.isSent && (
                 <div className="text-xs text-neutral-500 mb-1 ml-1">{message.senderName}</div>
               )}
@@ -224,19 +224,20 @@ const ChatMessages = memo(function ChatMessages({
                                   ? 'blur-xl' 
                                   : ''
                               }`}
+                              style={{ maxHeight: '300px', objectFit: 'contain' }}
                               onClick={() => handleImageClick(message)}
                             />
                           </>
                         )}
                         {message.viewOnce && !viewedMessages.has(message.id) && !blurredMessages.has(message.id) && (
                           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div className="bg-black/70 px-3 py-1 rounded-full text-xs text-white">
+                            <div className="bg-black/70 px-2 sm:px-3 py-1 rounded-full text-xs text-white">
                               👁️ Tap to view once
                             </div>
                           </div>
                         )}
                         {message.selfDestruct && !blurredMessages.has(message.id) && (
-                          <div className="absolute top-2 right-2 bg-black/70 px-2 py-1 rounded text-xs text-white pointer-events-none">
+                          <div className="absolute top-1.5 sm:top-2 right-1.5 sm:right-2 bg-black/70 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-xs text-white pointer-events-none">
                             ⏱️ {timeRemaining.get(message.id) || message.selfDestruct}s
                           </div>
                         )}
@@ -245,9 +246,9 @@ const ChatMessages = memo(function ChatMessages({
                     {/* Only show file info for: view-once, self-destruct, or non-image files */}
                     {(message.viewOnce || message.selfDestruct || !message.file.type.startsWith('image/')) && (!viewedMessages.has(message.id) || message.isSent) && !blurredMessages.has(message.id) && (
                       <div className="flex items-center gap-2 mt-2">
-                        <span className="text-2xl">{getFileIcon(message.file.type)}</span>
+                        <span className="text-xl sm:text-2xl flex-shrink-0">{getFileIcon(message.file.type)}</span>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{message.file.name}</p>
+                          <p className="text-xs sm:text-sm font-medium truncate">{message.file.name}</p>
                           <p className="text-xs opacity-70">{formatFileSize(message.file.size)}</p>
                         </div>
                         {(message.downloadable !== false) && message.file.data && (

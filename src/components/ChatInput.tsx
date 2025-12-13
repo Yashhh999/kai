@@ -125,17 +125,17 @@ export default function ChatInput({ onSendMessage, onTyping, disabled }: ChatInp
 
   return (
     <>
-      <form onSubmit={handleSubmit} className="border-t border-neutral-800 p-4"
+      <form onSubmit={handleSubmit} className="border-t border-neutral-800 p-3 sm:p-4"
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
         onDragOver={handleDrag}
         onDrop={handleDrop}
       >
         {attachment && (
-          <div className="mb-3 p-3 bg-neutral-900 border border-neutral-700 rounded-lg flex items-center gap-3">
-            <span className="text-2xl">{getFileIcon(attachment.file.type)}</span>
+          <div className="mb-2 sm:mb-3 p-2.5 sm:p-3 bg-neutral-900 border border-neutral-700 rounded-lg flex items-center gap-2 sm:gap-3">
+            <span className="text-xl sm:text-2xl flex-shrink-0">{getFileIcon(attachment.file.type)}</span>
             <div className="flex-1 min-w-0">
-              <p className="text-sm text-neutral-100 truncate">{attachment.file.name}</p>
+              <p className="text-xs sm:text-sm text-neutral-100 truncate">{attachment.file.name}</p>
               <p className="text-xs text-neutral-500">
                 {formatFileSize(attachment.file.size)} • {attachment.useP2P ? 'P2P' : 'Direct'}
                 {attachment.viewOnce && ' • 👁️ View Once'}
@@ -146,15 +146,15 @@ export default function ChatInput({ onSendMessage, onTyping, disabled }: ChatInp
             <button
               type="button"
               onClick={() => setAttachment(null)}
-              className="text-neutral-500 hover:text-red-400 transition-colors"
+              className="text-neutral-500 hover:text-red-400 transition-colors p-1 flex-shrink-0"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
         )}
-        <div className={`flex gap-2 ${dragActive ? 'ring-2 ring-white rounded-lg p-1' : ''}`}>
+        <div className={`flex gap-1.5 sm:gap-2 ${dragActive ? 'ring-2 ring-white rounded-lg p-1' : ''}`}>
           <input
             ref={fileInputRef}
             type="file"
@@ -166,7 +166,7 @@ export default function ChatInput({ onSendMessage, onTyping, disabled }: ChatInp
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled}
-            className="p-2 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="p-2.5 sm:p-2 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-w-[44px] flex items-center justify-center"
             title="Attach file"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -179,12 +179,12 @@ export default function ChatInput({ onSendMessage, onTyping, disabled }: ChatInp
             onChange={(e) => handleChange(e.target.value)}
             placeholder={attachment ? 'Add a caption (optional)...' : 'Type a message...'}
             disabled={disabled}
-            className="flex-1 bg-black border border-neutral-800 rounded-lg px-4 py-3 text-neutral-100 placeholder-neutral-600 focus:outline-none focus:ring-2 focus:ring-white focus:border-transparent disabled:opacity-50"
+            className="flex-1 bg-black border border-neutral-800 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-base text-neutral-100 placeholder-neutral-600 focus:outline-none focus:ring-2 focus:ring-white focus:border-transparent disabled:opacity-50 min-w-0"
           />
           <button
             type="submit"
             disabled={disabled || (!message.trim() && !attachment)}
-            className="bg-white text-black px-6 py-3 rounded-lg font-medium hover:bg-neutral-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-white text-black px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg font-medium hover:bg-neutral-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base min-w-[60px] flex-shrink-0"
           >
             Send
           </button>
@@ -192,11 +192,11 @@ export default function ChatInput({ onSendMessage, onTyping, disabled }: ChatInp
       </form>
 
       {showP2PModal && pendingFile && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral-900 border border-neutral-700 rounded-lg p-6 max-w-md w-full">
-            <h3 className="text-lg font-semibold text-white mb-2">Choose Transfer Method</h3>
-            <p className="text-sm text-neutral-400 mb-1">File: <span className="text-neutral-200">{pendingFile.name}</span></p>
-            <p className="text-sm text-neutral-400 mb-4">Size: <span className="text-neutral-200">{formatFileSize(pendingFile.size)}</span></p>
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-3 sm:p-4">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-lg p-4 sm:p-6 max-w-md w-full">
+            <h3 className="text-base sm:text-lg font-semibold text-white mb-2">Choose Transfer Method</h3>
+            <p className="text-xs sm:text-sm text-neutral-400 mb-1">File: <span className="text-neutral-200">{pendingFile.name}</span></p>
+            <p className="text-xs sm:text-sm text-neutral-400 mb-4">Size: <span className="text-neutral-200">{formatFileSize(pendingFile.size)}</span></p>
             
             <div className="space-y-3 mb-6">
               <div className="p-3 bg-neutral-800 rounded border border-neutral-700">

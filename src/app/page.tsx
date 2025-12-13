@@ -90,17 +90,17 @@ export default function Home() {
           onCancel={() => setShowLockSetup(false)}
         />
       )}
-      <div className="min-h-screen bg-black flex items-center justify-center p-4">
+      <div className="min-h-screen bg-black flex items-center justify-center p-3 sm:p-4">
       <LegalDisclaimer />
-      <div className="max-w-md w-full space-y-6">
+      <div className="max-w-md w-full space-y-4 sm:space-y-6">
         <div className="text-center">
-          <h1 className="text-4xl font-bold text-white mb-2">kai</h1>
-          <p className="text-gray-400">Messages so private, they ghost themselves.</p>
+          <h1 className="text-3xl sm:text-4xl font-bold text-white mb-2">kai</h1>
+          <p className="text-sm sm:text-base text-gray-400">Messages so private, they ghost themselves.</p>
         </div>
 
         {showSettings ? (
-          <div className="bg-neutral-900 border border-gray-800 rounded-lg p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-white">Settings</h2>
+          <div className="bg-neutral-900 border border-gray-800 rounded-lg p-4 sm:p-6 space-y-3 sm:space-y-4">
+            <h2 className="text-base sm:text-lg font-semibold text-white">Settings</h2>
             <div className="space-y-3">
               <div>
                 <label className="text-sm text-gray-400 mb-1 block">Username</label>
@@ -109,7 +109,7 @@ export default function Home() {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Enter your name"
-                  className="w-full bg-black border border-gray-800 rounded-lg px-4 py-2 text-gray-100 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-white"
+                  className="w-full bg-black border border-gray-800 rounded-lg px-3 sm:px-4 py-2.5 sm:py-2 text-sm sm:text-base text-gray-100 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-white"
                   maxLength={20}
                 />
               </div>
@@ -167,7 +167,7 @@ export default function Home() {
               <div className="flex gap-2">
                 <button
                   onClick={savePreferences}
-                  className="flex-1 bg-white text-black py-2 rounded-lg font-medium hover:bg-gray-200"
+                  className="flex-1 bg-white text-black py-3 sm:py-2 rounded-lg font-medium hover:bg-gray-200 text-sm sm:text-base"
                 >
                   Save
                 </button>
@@ -187,22 +187,22 @@ export default function Home() {
           </div>
         ) : (
           <>
-            <div className="bg-neutral-900 border border-gray-800 rounded-lg p-6 space-y-4">
+            <div className="bg-neutral-900 border border-gray-800 rounded-lg p-4 sm:p-6 space-y-3 sm:space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold text-white">New Room</h2>
-                  <p className="text-sm text-gray-400">Logged in as {username}</p>
+                  <h2 className="text-base sm:text-lg font-semibold text-white">New Room</h2>
+                  <p className="text-xs sm:text-sm text-gray-400">Logged in as {username}</p>
                 </div>
                 <button
                   onClick={() => setShowSettings(true)}
-                  className="text-xs text-gray-500 hover:text-gray-300 border border-gray-400 rounded-lg px-2 py-1"
+                  className="text-xs text-gray-500 hover:text-gray-300 border border-gray-400 rounded-lg px-2 sm:px-3 py-1.5 sm:py-1"
                 >
                   Settings
                 </button>
               </div>
               <button
                 onClick={handleCreateRoom}
-                className="w-full bg-white text-black py-3 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+                className="w-full bg-white text-black py-3 sm:py-3 rounded-lg font-medium hover:bg-gray-200 transition-colors text-sm sm:text-base"
               >
                 Create Room
               </button>

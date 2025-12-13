@@ -104,7 +104,7 @@ export default function SessionLockSetup({ onComplete, onCancel }: SessionLockSe
             <label className="block text-sm font-medium text-neutral-300 mb-3">
               Enter PIN
             </label>
-            <div className="flex gap-3 justify-center mb-6">
+            <div className="flex gap-2 sm:gap-3 justify-center mb-5 sm:mb-6">
               {pin.map((digit, index) => (
                 <input
                   key={index}
@@ -117,7 +117,7 @@ export default function SessionLockSetup({ onComplete, onCancel }: SessionLockSe
                   value={digit}
                   onChange={(e) => handlePinChange(index, e.target.value, false)}
                   onKeyDown={(e) => handleKeyDown(index, e, false)}
-                  className="w-14 h-14 text-center text-2xl font-bold rounded-lg border-2 bg-neutral-800 border-neutral-600 text-white focus:border-white focus:outline-none"
+                  className="w-12 h-12 sm:w-14 sm:h-14 text-center text-xl sm:text-2xl font-bold rounded-lg border-2 bg-neutral-800 border-neutral-600 text-white focus:border-white focus:outline-none"
                 />
               ))}
             </div>
@@ -127,7 +127,7 @@ export default function SessionLockSetup({ onComplete, onCancel }: SessionLockSe
             <label className="block text-sm font-medium text-neutral-300 mb-3">
               Confirm PIN
             </label>
-            <div className="flex gap-3 justify-center mb-6">
+            <div className="flex gap-2 sm:gap-3 justify-center mb-5 sm:mb-6">
               {confirmPin.map((digit, index) => (
                 <input
                   key={index}
@@ -140,7 +140,7 @@ export default function SessionLockSetup({ onComplete, onCancel }: SessionLockSe
                   value={digit}
                   onChange={(e) => handlePinChange(index, e.target.value, true)}
                   onKeyDown={(e) => handleKeyDown(index, e, true)}
-                  className={`w-14 h-14 text-center text-2xl font-bold rounded-lg border-2 bg-neutral-800 text-white focus:outline-none ${
+                  className={`w-12 h-12 sm:w-14 sm:h-14 text-center text-xl sm:text-2xl font-bold rounded-lg border-2 bg-neutral-800 text-white focus:outline-none ${
                     error ? 'border-red-500' : 'border-neutral-600 focus:border-white'
                   }`}
                 />

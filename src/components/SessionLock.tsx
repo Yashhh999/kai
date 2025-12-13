@@ -90,19 +90,19 @@ export default function SessionLock({ onUnlock }: SessionLockProps) {
   const isLockedOut = !!(lockoutUntil && Date.now() < lockoutUntil);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center backdrop-blur-md">
-      <div className="bg-neutral-900 border border-neutral-700 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
-        <div className="flex flex-col items-center mb-6">
-          <div className="bg-neutral-800 p-4 rounded-full mb-4">
-            <Lock className="w-8 h-8 text-white" />
+    <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center backdrop-blur-md p-3 sm:p-4">
+      <div className="bg-neutral-900 border border-neutral-700 rounded-2xl p-5 sm:p-6 md:p-8 max-w-md w-full shadow-2xl">
+        <div className="flex flex-col items-center mb-5 sm:mb-6">
+          <div className="bg-neutral-800 p-3 sm:p-4 rounded-full mb-3 sm:mb-4">
+            <Lock className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Session Locked</h2>
-          <p className="text-neutral-400 text-sm text-center">
+          <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Session Locked</h2>
+          <p className="text-neutral-400 text-xs sm:text-sm text-center">
             Enter your 4-digit PIN to unlock
           </p>
         </div>
 
-        <div className="flex gap-3 justify-center mb-6">
+        <div className="flex gap-2 sm:gap-3 justify-center mb-5 sm:mb-6">
           {pin.map((digit, index) => (
             <input
               key={index}
@@ -116,7 +116,7 @@ export default function SessionLock({ onUnlock }: SessionLockProps) {
               onChange={(e) => handlePinChange(index, e.target.value)}
               onKeyDown={(e) => handleKeyDown(index, e)}
               disabled={isLockedOut}
-              className={`w-16 h-16 text-center text-2xl font-bold rounded-lg border-2 
+              className={`w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 text-center text-xl sm:text-2xl font-bold rounded-lg border-2 
                 ${isLockedOut 
                   ? 'bg-neutral-800 border-neutral-700 text-neutral-600 cursor-not-allowed' 
                   : 'bg-neutral-800 border-neutral-600 text-white focus:border-white focus:outline-none'
