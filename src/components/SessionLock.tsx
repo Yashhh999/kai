@@ -87,7 +87,7 @@ export default function SessionLock({ onUnlock }: SessionLockProps) {
     return Math.ceil((lockoutUntil - Date.now()) / 1000);
   };
 
-  const isLockedOut = lockoutUntil && Date.now() < lockoutUntil;
+  const isLockedOut = !!(lockoutUntil && Date.now() < lockoutUntil);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center backdrop-blur-md">
@@ -106,7 +106,9 @@ export default function SessionLock({ onUnlock }: SessionLockProps) {
           {pin.map((digit, index) => (
             <input
               key={index}
-              ref={el => inputRefs.current[index] = el}
+              ref={el => {
+                inputRefs.current[index] = el;
+              }}
               type="text"
               inputMode="numeric"
               maxLength={1}

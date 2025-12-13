@@ -7,8 +7,6 @@ import Peer from 'simple-peer';
 import ChatMessages from '@/components/ChatMessages';
 import ChatInput from '@/components/ChatInput';
 import RoomHeader from '@/components/RoomHeader';
-import SessionLock from '@/components/SessionLock';
-import SessionLockSetup from '@/components/SessionLockSetup';
 import { deriveKey, encryptMessage, decryptMessage } from '@/lib/encryption';
 import { saveRoomData, loadRoomData, Message, getUserPreferences, saveUserPreferences } from '@/lib/storage';
 import { prepareFile, isFileTooLarge } from '@/lib/fileUtils';
@@ -37,16 +35,7 @@ export default function RoomPage() {
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [transferMode, setTransferMode] = useState<'p2p' | 'direct' | null>(null);
   const [isReceiving, setIsReceiving] = useState(false);
-  const [isLocked, setIsLocked] = useState(false);
-  const [showLockSetup, setShowLockSetup] = useState(false);
-  const [hasSessionPin, setHasSessionPin] = useState(false);
   const peersRef = useRef<Map<string, Peer.Instance>>(new Map());
-
-  // Check for existing session PIN
-  useEffect(() => {
-    const pin = localStorage.getItem('session_pin');
-    setHasSessionPin(!!pin);
-  }, []);
 
   useEffect(() => {
     if (!roomCode) {
@@ -605,23 +594,6 @@ export default function RoomPage() {
     saveUserPreferences({ ...prefs, extendedRetention: newRetention });
   }, [extendedRetention, roomCode, messages]);
 
-  const handleLockSession = useCallback(() => {
-    if (hasSessionPin) {
-      setIsLocked(true);
-    } else {
-      setShowLockSetup(true);
-    }
-  }, [hasSessionPin]);
-
-  const handleUnlockSession = useCallback(() => {
-    setIsLocked(false);
-  }, []);
-
-  const handleLockSetupComplete = useCallback(() => {
-    setHasSessionPin(true);
-    setShowLockSetup(false);
-  }, []);
-
   const onlineUsers = useMemo(() => {
     const now = Date.now();
     return users.filter((u: RoomUser) => now - u.lastSeen < 60000);
@@ -629,21 +601,12 @@ export default function RoomPage() {
 
   return (
     <>
-      {isLocked && <SessionLock onUnlock={handleUnlockSession} />}
-      {showLockSetup && (
-        <SessionLockSetup 
-          onComplete={handleLockSetupComplete}
-          onCancel={() => setShowLockSetup(false)}
-        />
-      )}
       <div className="flex flex-col h-screen bg-black">
         <RoomHeader 
           roomCode={roomCode} 
           users={onlineUsers}
           extendedRetention={extendedRetention}
           onToggleRetention={toggleRetention}
-          onLockSession={handleLockSession}
-          hasSessionPin={hasSessionPin}
         />
       <ChatMessages 
         messages={messages} 

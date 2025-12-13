@@ -108,7 +108,9 @@ export default function SessionLockSetup({ onComplete, onCancel }: SessionLockSe
               {pin.map((digit, index) => (
                 <input
                   key={index}
-                  ref={el => inputRefs.current[index] = el}
+                  ref={el => {
+                    inputRefs.current[index] = el;
+                  }}
                   type="text"
                   inputMode="numeric"
                   maxLength={1}
@@ -129,7 +131,9 @@ export default function SessionLockSetup({ onComplete, onCancel }: SessionLockSe
               {confirmPin.map((digit, index) => (
                 <input
                   key={index}
-                  ref={el => confirmRefs.current[index] = el}
+                  ref={el => {
+                    confirmRefs.current[index] = el;
+                  }}
                   type="text"
                   inputMode="numeric"
                   maxLength={1}
