@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Rooms - Encrypted Chat
 
-## Getting Started
+Fast, secure chat rooms with browser storage and end-to-end encryption.
 
-First, run the development server:
+## Features
+
+- **E2E Encryption** - AES-GCM 256-bit encryption
+- **Browser Storage** - No database, all local
+- **Flexible Retention** - 24 hours or 7 weeks
+- **Message Editing** - Edit with history tracking
+- **Typing Indicators** - See who's typing
+- **Online Status** - Real-time presence
+- **Username Support** - Customizable display names
+- **Room Codes** - Secure 16-digit codes
+
+## Quick Start
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Usage
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Set your username
+2. Create or join a room
+3. Share the room code
+4. Chat securely
 
-## Learn More
+## Features Detail
 
-To learn more about Next.js, take a look at the following resources:
+### Message Editing
+- Edit your messages anytime
+- Both users can view original content
+- Timestamp shows edit history
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Storage Options
+- **24H** - Default, messages expire in 24 hours
+- **7W** - Extended mode, keeps chats for 7 weeks
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Typing Indicators
+- Real-time typing status
+- 2-second timeout
+- Shows username while typing
 
-## Deploy on Vercel
+### Online Status
+- Active user list
+- Last seen tracking
+- 30-second heartbeat
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Tech
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Next.js 16
+- Socket.IO  
+- Web Crypto API
+- TypeScript
+- Tailwind CSS
+
+## Security
+
+- Client-side encryption
+- PBKDF2 key derivation
+- Zero server storage
+- Cryptographic random codes
+
+## License
+
+MIT
+# kai
