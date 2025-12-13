@@ -7,6 +7,14 @@ export interface Message {
   isSent: boolean;
   editedAt?: number;
   originalContent?: string;
+  type?: 'text' | 'file' | 'deleted';
+  file?: {
+    name: string;
+    size: number;
+    type: string;
+    data: string;
+    thumbnail?: string;
+  };
 }
 
 export interface RoomStorage {
@@ -42,9 +50,30 @@ export const saveUserPreferences = (prefs: UserPreferences): void => {
 export const saveRoomData = (roomCode: string, messages: Message[], extendedRetention = false): void => {
   const now = Date.now();
   const retention = extendedRetention ? SEVEN_WEEKS_MS : ONE_DAY_MS;
+  
+  const MAX_MESSAGES = 100;
+  let trimmedMessages = messages.slice(-MAX_MESSAGES);
+  
+  trimmedMessages = trimmedMessages.map(msg => {
+    if (msg.type === 'file' && msg.file?.data) {
+      const fileSizeMB = msg.file.data.length / (1024 * 1024);
+      if (fileSizeMB > 2) {
+        return {
+          ...msg,
+          file: {
+            ...msg.file,
+            data: '',
+            thumbnail: msg.file.thumbnail || undefined
+          }
+        };
+      }
+    }
+    return msg;
+  });
+  
   const data: RoomStorage = {
     roomCode,
-    messages,
+    messages: trimmedMessages,
     createdAt: now,
     expiresAt: now + retention,
     extendedRetention,
@@ -53,7 +82,19 @@ export const saveRoomData = (roomCode: string, messages: Message[], extendedRete
   try {
     localStorage.setItem(`${STORAGE_KEY_PREFIX}${roomCode}`, JSON.stringify(data));
   } catch (error) {
-    console.error('Storage save failed:', error);
+    console.error('Storage save failed (quota exceeded):', error);
+    
+    const reducedMessages = trimmedMessages.slice(-50).map(msg => ({
+      ...msg,
+      file: msg.file ? { ...msg.file, data: '', thumbnail: undefined } : undefined
+    }));
+    
+    try {
+      const reducedData = { ...data, messages: reducedMessages };
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}${roomCode}`, JSON.stringify(reducedData));
+    } catch (e) {
+      console.error('Failed to save even reduced data:', e);
+    }
   }
 };
 

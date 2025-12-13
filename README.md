@@ -8,6 +8,9 @@ Fast, secure chat rooms with browser storage and end-to-end encryption.
 - **Browser Storage** - No database, all local
 - **Flexible Retention** - 24 hours or 7 weeks
 - **Message Editing** - Edit with history tracking
+- **Message Deletion** - Delete with "msg deleted" text
+- **File Sharing** - Images, videos, docs with auto-compression
+- **P2P Transfer** - WebRTC for files >10MB
 - **Typing Indicators** - See who's typing
 - **Online Status** - Real-time presence
 - **Username Support** - Customizable display names
@@ -31,20 +34,34 @@ Open http://localhost:3000
 
 ## Features Detail
 
+### File Sharing
+- Images, videos, PDFs, documents, archives
+- Automatic image compression
+- Thumbnail generation
+- Direct send <10MB (encrypted Socket.IO)
+- P2P transfer >10MB (WebRTC)
+
 ### Message Editing
 - Edit your messages anytime
 - Both users can view original content
 - Timestamp shows edit history
 
+### Message Deletion
+- Delete your own messages
+- Shows "Message deleted" to all users
+- Removes content from storage
+
 ### Storage Options
 - **24H** - Default, messages expire in 24 hours
-- **7W** - Extended mode, keeps chats for 7 weeks
+## Tech
 
-### Typing Indicators
-- Real-time typing status
-- 2-second timeout
-- Shows username while typing
-
+- Next.js 16
+- Socket.IO
+- simple-peer (WebRTC)
+- browser-image-compression
+- Web Crypto API
+- TypeScript
+- Tailwind CSS
 ### Online Status
 - Active user list
 - Last seen tracking

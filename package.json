@@ -9,9 +9,11 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "browser-image-compression": "^2.0.2",
     "next": "16.0.10",
     "react": "19.2.1",
     "react-dom": "19.2.1",
+    "simple-peer": "^9.11.1",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "tsx": "^4.21.0"
@@ -21,6 +23,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/simple-peer": "^9.11.9",
     "eslint": "^9",
     "eslint-config-next": "16.0.10",
     "tailwindcss": "^4",

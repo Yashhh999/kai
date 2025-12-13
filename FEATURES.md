@@ -18,7 +18,16 @@
 - **E2E Encryption** - All messages encrypted client-side
 - **Message Editing** - Edit sent messages anytime
 - **Edit History** - View original message content
+- **Message Deletion** - Delete your own messages
 - **Sender Names** - Display username with each message
+
+### File Sharing
+- **Multiple File Types** - Images, videos, documents, archives, code files
+- **Automatic Compression** - Images optimized to reduce size
+- **Thumbnail Generation** - Preview for image files
+- **Direct Transfer** - Files <10MB sent via encrypted Socket.IO
+- **P2P Transfer** - Files >10MB sent via WebRTC peer-to-peer
+- **Download Support** - One-click download for all files
 
 ### Presence
 - **Online Status** - See who's currently active
@@ -40,6 +49,8 @@
 - crypto.getRandomValues() for codes
 - No server-side message storage
 - Client-side encryption/decryption
+- WebRTC encrypted data channels for P2P
+- Files encrypted before transmission
 
 ### Performance
 - Optimized React hooks (useCallback, useMemo)
@@ -73,11 +84,23 @@
 ### Joining Room
 1. Paste room code
 2. Click "Join"
-3. Start chatting
-
 ### Editing Messages
 1. Click "Edit" on your message
 2. Modify text
+3. Press Enter or click Save
+4. Original visible via "Show original"
+
+### Deleting Messages
+1. Click "Delete" on your message
+2. Confirm deletion
+3. Message replaced with "Message deleted"
+
+### Sending Files
+1. Click file button (📎) in chat input
+2. Select file or drag & drop
+3. Files <10MB sent directly (encrypted)
+4. Files >10MB use P2P transfer
+5. View progress bar for uploads
 3. Press Enter or click Save
 4. Original visible via "Show original"
 

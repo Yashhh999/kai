@@ -16,12 +16,19 @@ interface RoomUser {
   lastSeen: number;
 }
 
-interface RoomData {
+interface Room {
   users: Map<string, RoomUser>;
   createdAt: number;
+  messageHistory: Array<{
+    encryptedMessage: string;
+    senderId: string;
+    senderName: string;
+    timestamp: number;
+  }>;
 }
 
-const rooms = new Map<string, RoomData>();
+const rooms = new Map<string, Room>();
+const MAX_HISTORY = 50;
 
 const cleanupRooms = () => {
   const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
@@ -63,10 +70,15 @@ app.prepare().then(() => {
         rooms.set(roomId, {
           users: new Map([[socket.id, { id: socket.id, name: username, lastSeen: Date.now() }]]),
           createdAt: Date.now(),
+          messageHistory: [],
         });
       } else {
         const room = rooms.get(roomId)!;
         room.users.set(socket.id, { id: socket.id, name: username, lastSeen: Date.now() });
+        
+        if (room.messageHistory.length > 0) {
+          socket.emit('message-history', room.messageHistory);
+        }
       }
 
       const room = rooms.get(roomId)!;
@@ -100,11 +112,47 @@ app.prepare().then(() => {
     });
 
     socket.on('send-message', ({ roomId, encryptedMessage, username }) => {
-      socket.to(roomId).emit('receive-message', {
+      const messageData = {
         encryptedMessage,
         senderId: socket.id,
         senderName: username,
         timestamp: Date.now(),
+      };
+      
+      const room = rooms.get(roomId);
+      if (room) {
+        room.messageHistory.push(messageData);
+        if (room.messageHistory.length > MAX_HISTORY) {
+          room.messageHistory.shift();
+        }
+      }
+      
+      socket.to(roomId).emit('receive-message', messageData);
+    });
+
+    socket.on('send-file', ({ roomId, encryptedFile, username }) => {
+      socket.to(roomId).emit('receive-file', {
+        encryptedFile,
+        senderId: socket.id,
+        senderName: username,
+        timestamp: Date.now(),
+      });
+    });
+
+    socket.on('delete-message', ({ roomId, messageId }) => {
+      io.to(roomId).emit('message-deleted', { messageId });
+    });
+
+    socket.on('p2p-signal', ({ to, roomId, signal }) => {
+      io.to(to).emit('p2p-signal', {
+        from: socket.id,
+        signal,
+      });
+    });
+
+    socket.on('p2p-request', ({ to, roomId }) => {
+      io.to(to).emit('p2p-request', {
+        from: socket.id,
       });
     });
 
