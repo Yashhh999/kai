@@ -29,6 +29,28 @@ interface Room {
 
 const rooms = new Map<string, Room>();
 const MAX_HISTORY = 50;
+const MAX_ROOM_SIZE = 50;
+const MAX_ROOMS = 1000;
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_WINDOW = 60000;
+const RATE_LIMIT_MAX = 100;
+
+const checkRateLimit = (socketId: string): boolean => {
+  const now = Date.now();
+  const record = rateLimitMap.get(socketId);
+  
+  if (!record || now > record.resetTime) {
+    rateLimitMap.set(socketId, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+    return true;
+  }
+  
+  if (record.count >= RATE_LIMIT_MAX) {
+    return false;
+  }
+  
+  record.count++;
+  return true;
+};
 
 const cleanupRooms = () => {
   const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
@@ -36,6 +58,10 @@ const cleanupRooms = () => {
     if (data.createdAt < oneDayAgo) {
       rooms.delete(roomId);
     }
+  }
+  
+  if (rateLimitMap.size > 10000) {
+    rateLimitMap.clear();
   }
 };
 
@@ -58,12 +84,27 @@ app.prepare().then(() => {
       origin: '*',
       methods: ['GET', 'POST'],
     },
+    maxHttpBufferSize: 10 * 1024 * 1024,
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    connectTimeout: 45000,
+    transports: ['websocket', 'polling'],
   });
 
   io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
 
     socket.on('join-room', ({ roomId, username }: { roomId: string; username: string }) => {
+      if (!checkRateLimit(socket.id)) {
+        socket.emit('error', { message: 'Rate limit exceeded' });
+        return;
+      }
+
+      if (rooms.size >= MAX_ROOMS && !rooms.has(roomId)) {
+        socket.emit('error', { message: 'Server at capacity' });
+        return;
+      }
+
       socket.join(roomId);
       
       if (!rooms.has(roomId)) {
@@ -74,6 +115,12 @@ app.prepare().then(() => {
         });
       } else {
         const room = rooms.get(roomId)!;
+        
+        if (room.users.size >= MAX_ROOM_SIZE) {
+          socket.emit('error', { message: 'Room is full' });
+          return;
+        }
+        
         room.users.set(socket.id, { id: socket.id, name: username, lastSeen: Date.now() });
         
         if (room.messageHistory.length > 0) {
@@ -112,6 +159,10 @@ app.prepare().then(() => {
     });
 
     socket.on('send-message', ({ roomId, encryptedMessage, username }) => {
+      if (!checkRateLimit(socket.id)) {
+        return;
+      }
+
       const messageData = {
         encryptedMessage,
         senderId: socket.id,

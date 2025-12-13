@@ -1,8 +1,8 @@
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy - Rooms',
-  description: 'Privacy Policy for Rooms encrypted chat',
+  title: 'Privacy Policy - Kai',
+  description: 'Privacy Policy for Kai encrypted chat',
 };
 
 export default function PrivacyPage() {

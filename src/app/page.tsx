@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { generateRoomCode, isValidRoomCode, formatRoomCode } from '@/lib/roomCode';
 import { cleanupExpiredRooms, getAllStoredRooms, getUserPreferences, saveUserPreferences } from '@/lib/storage';
 import LegalDisclaimer from '@/components/LegalDisclaimer';
+import SessionLock from '@/components/SessionLock';
+import SessionLockSetup from '@/components/SessionLockSetup';
 
 export default function Home() {
   const router = useRouter();
@@ -14,6 +16,9 @@ export default function Home() {
   const [username, setUsername] = useState('');
   const [extendedRetention, setExtendedRetention] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
+  const [showLockSetup, setShowLockSetup] = useState(false);
+  const [hasSessionPin, setHasSessionPin] = useState(false);
 
   useEffect(() => {
     cleanupExpiredRooms();
@@ -22,6 +27,13 @@ export default function Home() {
     const prefs = getUserPreferences();
     setUsername(prefs.username);
     setExtendedRetention(prefs.extendedRetention);
+    
+    // Check for session PIN and auto-lock
+    const pin = localStorage.getItem('session_pin');
+    if (pin) {
+      setHasSessionPin(true);
+      setIsLocked(true);
+    }
     
     if (!prefs.username) {
       setShowSettings(true);
@@ -67,12 +79,23 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center p-4">
+    <>
+      {isLocked && <SessionLock onUnlock={() => setIsLocked(false)} />}
+      {showLockSetup && (
+        <SessionLockSetup 
+          onComplete={() => {
+            setHasSessionPin(true);
+            setShowLockSetup(false);
+          }}
+          onCancel={() => setShowLockSetup(false)}
+        />
+      )}
+      <div className="min-h-screen bg-black flex items-center justify-center p-4">
       <LegalDisclaimer />
       <div className="max-w-md w-full space-y-6">
         <div className="text-center">
           <h1 className="text-4xl font-bold text-white mb-2">kai</h1>
-          <p className="text-gray-400">Encrypted chat, browser-stored</p>
+          <p className="text-gray-400">Messages so private, they ghost themselves.</p>
         </div>
 
         {showSettings ? (
@@ -90,7 +113,41 @@ export default function Home() {
                   maxLength={20}
                 />
               </div>
-              <div className="flex items-center justify-between">
+              <div className="space-y-3 pt-3 border-t border-gray-800">
+                <div>
+                  <p className="text-sm font-medium text-white mb-1">Session Lock</p>
+                  <p className="text-xs text-gray-500 mb-3">Protect your account with a 4-digit PIN</p>
+                </div>
+                {hasSessionPin ? (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setIsLocked(true)}
+                      className="flex-1 bg-white text-black py-2 rounded-lg font-medium hover:bg-gray-200 text-sm"
+                    >
+                      🔒 Lock Now
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm('Remove session lock? You will need to set it up again.')) {
+                          localStorage.removeItem('session_pin');
+                          setHasSessionPin(false);
+                        }
+                      }}
+                      className="px-4 py-2 text-red-400 hover:text-red-300 border border-red-400/30 rounded-lg text-sm"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowLockSetup(true)}
+                    className="w-full bg-neutral-800 text-white py-2 rounded-lg font-medium hover:bg-neutral-700 text-sm border border-gray-700"
+                  >
+                    🔓 Setup PIN Lock
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center justify-between pt-3 border-t border-gray-800">
                 <div>
                   <div className="text-sm text-gray-400">Extended Retention</div>
                   <div className="text-xs text-gray-600">Store chats for 7 weeks</div>
@@ -219,5 +276,6 @@ export default function Home() {
         </div>
       </div>
     </div>
+    </>
   );
 }

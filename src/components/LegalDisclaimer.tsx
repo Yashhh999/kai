@@ -25,7 +25,7 @@ export default function LegalDisclaimer() {
         <h2 className="text-xl font-bold text-white">Before You Start</h2>
         
         <div className="space-y-3 text-sm text-gray-300">
-          <p>By using Rooms, you agree:</p>
+          <p>By using Kai, you agree:</p>
           
           <ul className="space-y-2 list-disc list-inside text-gray-400">
             <li>No illegal activities allowed</li>

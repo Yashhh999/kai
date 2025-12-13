@@ -35,9 +35,10 @@ export const getFileIcon = (type: string): string => {
 
 export const compressImage = async (file: File): Promise<File> => {
   const options = {
-    maxSizeMB: 1,
+    maxSizeMB: 0.5,
     maxWidthOrHeight: 1920,
     useWebWorker: true,
+    initialQuality: 0.7,
   };
   
   try {
@@ -51,22 +52,36 @@ export const compressImage = async (file: File): Promise<File> => {
 export const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Remove the data URI prefix (e.g., "data:image/png;base64,")
+      const base64 = result.split(',')[1];
+      resolve(base64);
+    };
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
 };
 
-export const base64ToBlob = (base64: string): Blob => {
-  const arr = base64.split(',');
-  const mime = arr[0].match(/:(.*?);/)![1];
-  const bstr = atob(arr[1]);
+export const base64ToBlob = (base64: string, type?: string): Blob => {
+  // Handle both formats: full data URI and plain base64
+  let base64Data = base64;
+  let mimeType = type;
+  
+  if (base64.includes(',')) {
+    // It's a full data URI
+    const arr = base64.split(',');
+    mimeType = arr[0].match(/:(.*?);/)![1];
+    base64Data = arr[1];
+  }
+  
+  const bstr = atob(base64Data);
   let n = bstr.length;
   const u8arr = new Uint8Array(n);
   while (n--) {
     u8arr[n] = bstr.charCodeAt(n);
   }
-  return new Blob([u8arr], { type: mime });
+  return new Blob([u8arr], { type: mimeType || 'application/octet-stream' });
 };
 
 export const createThumbnail = async (file: File): Promise<string | undefined> => {
@@ -83,7 +98,8 @@ export const createThumbnail = async (file: File): Promise<string | undefined> =
     
     try {
       const compressed = await imageCompression(file, options);
-      return await fileToBase64(compressed);
+      const base64String = await fileToBase64(compressed);
+      return base64String;
     } catch {
       return undefined;
     }

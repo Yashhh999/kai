@@ -1,4 +1,4 @@
-# Rooms - Encrypted Chat
+# Kai - Encrypted Chat
 
 Fast, secure chat rooms with browser storage and end-to-end encryption.
 

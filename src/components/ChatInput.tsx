@@ -4,16 +4,21 @@ import { useState, FormEvent, useEffect, useRef } from 'react';
 import { formatFileSize, getFileIcon } from '@/lib/fileUtils';
 
 interface ChatInputProps {
-  onSendMessage: (message: string, attachment?: { file: File; useP2P: boolean }) => void;
+  onSendMessage: (message: string, attachment?: { file: File; useP2P: boolean; viewOnce?: boolean; selfDestruct?: number; downloadable?: boolean }) => void;
   onTyping: (isTyping: boolean) => void;
   disabled?: boolean;
 }
 
 export default function ChatInput({ onSendMessage, onTyping, disabled }: ChatInputProps) {
   const [message, setMessage] = useState('');
-  const [attachment, setAttachment] = useState<{ file: File; useP2P: boolean } | null>(null);
+  const [attachment, setAttachment] = useState<{ file: File; useP2P: boolean; viewOnce?: boolean; selfDestruct?: number; downloadable?: boolean } | null>(null);
   const [showP2PModal, setShowP2PModal] = useState(false);
+  const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingP2P, setPendingP2P] = useState(false);
+  const [viewOnce, setViewOnce] = useState(false);
+  const [selfDestruct, setSelfDestruct] = useState<number>(0);
+  const [downloadable, setDownloadable] = useState(true);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -39,14 +44,39 @@ export default function ChatInput({ onSendMessage, onTyping, disabled }: ChatInp
 
   const handleP2PChoice = (useP2P: boolean) => {
     if (pendingFile) {
-      if (!useP2P && pendingFile.size > 10 * 1024 * 1024) {
-        setAttachment({ file: pendingFile, useP2P: true });
+      const isImage = pendingFile.type.startsWith('image/');
+      setPendingP2P(useP2P || pendingFile.size > 10 * 1024 * 1024);
+      
+      if (isImage) {
+        setShowP2PModal(false);
+        setShowOptionsModal(true);
       } else {
-        setAttachment({ file: pendingFile, useP2P });
+        if (!useP2P && pendingFile.size > 10 * 1024 * 1024) {
+          setAttachment({ file: pendingFile, useP2P: true });
+        } else {
+          setAttachment({ file: pendingFile, useP2P });
+        }
+        setShowP2PModal(false);
+        setPendingFile(null);
       }
     }
-    setShowP2PModal(false);
+  };
+
+  const handleOptionsConfirm = () => {
+    if (pendingFile) {
+      setAttachment({ 
+        file: pendingFile, 
+        useP2P: pendingP2P,
+        viewOnce,
+        selfDestruct: selfDestruct > 0 ? selfDestruct : undefined,
+        downloadable
+      });
+    }
+    setShowOptionsModal(false);
     setPendingFile(null);
+    setViewOnce(false);
+    setSelfDestruct(0);
+    setDownloadable(true);
   };
 
   const handleDrag = (e: React.DragEvent) => {
@@ -107,7 +137,10 @@ export default function ChatInput({ onSendMessage, onTyping, disabled }: ChatInp
             <div className="flex-1 min-w-0">
               <p className="text-sm text-neutral-100 truncate">{attachment.file.name}</p>
               <p className="text-xs text-neutral-500">
-                {formatFileSize(attachment.file.size)} • {attachment.useP2P ? 'P2P Transfer' : 'Direct'}
+                {formatFileSize(attachment.file.size)} • {attachment.useP2P ? 'P2P' : 'Direct'}
+                {attachment.viewOnce && ' • 👁️ View Once'}
+                {attachment.selfDestruct && ` • ⏱️ ${attachment.selfDestruct}s`}
+                {!attachment.downloadable && ' • 🚫 No Download'}
               </p>
             </div>
             <button
@@ -197,6 +230,87 @@ export default function ChatInput({ onSendMessage, onTyping, disabled }: ChatInp
                 onClick={() => {
                   setShowP2PModal(false);
                   setPendingFile(null);
+                }}
+                className="px-4 py-2 text-neutral-400 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showOptionsModal && pendingFile && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold text-white mb-4">Photo Options</h3>
+            
+            <div className="space-y-4 mb-6">
+              <label className="flex items-center justify-between cursor-pointer">
+                <div>
+                  <p className="text-sm font-medium text-white">👁️ View Once</p>
+                  <p className="text-xs text-neutral-400">Photo disappears after viewing</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={viewOnce}
+                  onChange={(e) => {
+                    setViewOnce(e.target.checked);
+                    if (e.target.checked) setDownloadable(false);
+                  }}
+                  className="w-5 h-5 rounded bg-neutral-800 border-neutral-600"
+                />
+              </label>
+
+              <label className="flex items-center justify-between cursor-pointer">
+                <div>
+                  <p className="text-sm font-medium text-white">📥 Downloadable</p>
+                  <p className="text-xs text-neutral-400">Allow download button</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={downloadable}
+                  onChange={(e) => setDownloadable(e.target.checked)}
+                  disabled={viewOnce || selfDestruct > 0}
+                  className="w-5 h-5 rounded bg-neutral-800 border-neutral-600 disabled:opacity-50"
+                />
+              </label>
+
+              <div>
+                <label className="block mb-2">
+                  <p className="text-sm font-medium text-white mb-1">⏱️ Self-Destruct Timer</p>
+                  <p className="text-xs text-neutral-400 mb-2">Enter time in seconds (1-120, 0 = disabled)</p>
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="120"
+                  value={selfDestruct}
+                  onChange={(e) => {
+                    const val = Math.max(0, Math.min(120, Number(e.target.value) || 0));
+                    setSelfDestruct(val);
+                    if (val > 0) setDownloadable(false);
+                  }}
+                  placeholder="0"
+                  className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-sm focus:outline-none focus:ring-2 focus:ring-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleOptionsConfirm}
+                className="flex-1 px-4 py-2 bg-white text-black rounded-lg font-medium hover:bg-neutral-200 transition-colors"
+              >
+                Confirm
+              </button>
+              <button
+                onClick={() => {
+                  setShowOptionsModal(false);
+                  setPendingFile(null);
+                  setViewOnce(false);
+                  setSelfDestruct(0);
+                  setDownloadable(true);
                 }}
                 className="px-4 py-2 text-neutral-400 hover:text-white transition-colors"
               >

@@ -1,8 +1,8 @@
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Terms of Service - Rooms',
-  description: 'Terms of Service for Rooms encrypted chat',
+  title: 'Terms of Service - Kai',
+  description: 'Terms of Service for Kai encrypted chat',
 };
 
 export default function TermsPage() {
@@ -18,7 +18,7 @@ export default function TermsPage() {
 
         <section className="space-y-4">
           <h2 className="text-xl font-semibold text-white">Acceptance</h2>
-          <p className="text-gray-300">By using Rooms, you agree to these terms. Don't like them? Don't use it.</p>
+          <p className="text-gray-300">By using Kai, you agree to these terms. Don't like them? Don't use it.</p>
         </section>
 
         <section className="space-y-4">

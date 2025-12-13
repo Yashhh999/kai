@@ -4,7 +4,7 @@ Last updated: December 13, 2025
 
 ## Acceptance
 
-By using Rooms, you agree to these terms. Don't like them? Don't use it.
+By using Kai, you agree to these terms. Don't like them? Don't use it.
 
 ## Prohibited Use
 

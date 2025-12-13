@@ -3,6 +3,7 @@
 import { formatRoomCode } from '@/lib/roomCode';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { Lock, Unlock } from 'lucide-react';
 
 interface RoomUser {
   id: string;
@@ -15,9 +16,11 @@ interface RoomHeaderProps {
   users: RoomUser[];
   extendedRetention: boolean;
   onToggleRetention: () => void;
+  onLockSession: () => void;
+  hasSessionPin: boolean;
 }
 
-export default function RoomHeader({ roomCode, users, extendedRetention, onToggleRetention }: RoomHeaderProps) {
+export default function RoomHeader({ roomCode, users, extendedRetention, onToggleRetention, onLockSession, hasSessionPin }: RoomHeaderProps) {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
 
@@ -52,34 +55,45 @@ export default function RoomHeader({ roomCode, users, extendedRetention, onToggl
             </span>
           </div>
         </div>
-        <button
-          onClick={leaveRoom}
-          className="px-4 py-2 text-sm text-gray-400 hover:text-white border border-gray-800 rounded-lg hover:border-gray-600 transition-colors"
-        >
-          Leave
-        </button>
-      </div>
-      
-      <div className="flex items-center justify-between">
-        <div className="flex flex-wrap gap-2">
-          {users.map(user => (
-            <div key={user.id} className="text-xs px-2 py-1 bg-neutral-900 rounded border border-gray-800 text-gray-400">
-              {user.name}
-            </div>
-          ))}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onToggleRetention}
+            className={`text-xs px-3 py-1 rounded border transition-colors ${
+              extendedRetention
+                ? 'bg-blue-500/10 border-blue-500/30 text-blue-400'
+                : 'bg-neutral-900 border-gray-800 text-gray-500 hover:text-gray-300'
+            }`}
+            title={extendedRetention ? '7 weeks retention enabled' : 'Enable 7 weeks retention'}
+          >
+            {extendedRetention ? '7W' : '24H'}
+          </button>
+          
+          {hasSessionPin ? (
+            <button
+              onClick={onLockSession}
+              className="p-2 text-gray-400 hover:text-white border border-gray-800 rounded-lg hover:border-gray-600 transition-colors"
+              title="Lock session"
+            >
+              <Lock className="w-4 h-4" />
+            </button>
+          ) : (
+            <button
+              onClick={onLockSession}
+              className="text-xs px-3 py-1 rounded border bg-neutral-900 border-gray-800 text-gray-400 hover:text-gray-300 transition-colors flex items-center gap-1"
+              title="Setup session lock"
+            >
+              <Unlock className="w-3 h-3" />
+              <span>Setup Lock</span>
+            </button>
+          )}
+          
+          <button
+            onClick={leaveRoom}
+            className="px-4 py-2 text-sm text-gray-400 hover:text-white border border-gray-800 rounded-lg hover:border-gray-600 transition-colors"
+          >
+            Leave
+          </button>
         </div>
-        
-        <button
-          onClick={onToggleRetention}
-          className={`text-xs px-3 py-1 rounded border transition-colors ${
-            extendedRetention
-              ? 'bg-blue-500/10 border-blue-500/30 text-blue-400'
-              : 'bg-neutral-900 border-gray-800 text-gray-500 hover:text-gray-300'
-          }`}
-          title={extendedRetention ? '7 weeks retention enabled' : 'Enable 7 weeks retention'}
-        >
-          {extendedRetention ? '7W' : '24H'}
-        </button>
       </div>
     </div>
   );

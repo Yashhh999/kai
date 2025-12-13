@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Rooms - Secure Encrypted Chat",
-  description: "Private, encrypted chat rooms with 24-hour expiry",
+  title: "kai - Encrypted and totally private chats",
+  description: "Messages so private, they ghost themselves.",
 };
 
 export default function RootLayout({

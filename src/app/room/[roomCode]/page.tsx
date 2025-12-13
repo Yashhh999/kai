@@ -7,6 +7,8 @@ import Peer from 'simple-peer';
 import ChatMessages from '@/components/ChatMessages';
 import ChatInput from '@/components/ChatInput';
 import RoomHeader from '@/components/RoomHeader';
+import SessionLock from '@/components/SessionLock';
+import SessionLockSetup from '@/components/SessionLockSetup';
 import { deriveKey, encryptMessage, decryptMessage } from '@/lib/encryption';
 import { saveRoomData, loadRoomData, Message, getUserPreferences, saveUserPreferences } from '@/lib/storage';
 import { prepareFile, isFileTooLarge } from '@/lib/fileUtils';
@@ -35,7 +37,16 @@ export default function RoomPage() {
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [transferMode, setTransferMode] = useState<'p2p' | 'direct' | null>(null);
   const [isReceiving, setIsReceiving] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
+  const [showLockSetup, setShowLockSetup] = useState(false);
+  const [hasSessionPin, setHasSessionPin] = useState(false);
   const peersRef = useRef<Map<string, Peer.Instance>>(new Map());
+
+  // Check for existing session PIN
+  useEffect(() => {
+    const pin = localStorage.getItem('session_pin');
+    setHasSessionPin(!!pin);
+  }, []);
 
   useEffect(() => {
     if (!roomCode) {
@@ -62,6 +73,10 @@ export default function RoomPage() {
 
     const socketInstance = io('http://localhost:3000', {
       transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      timeout: 20000,
     });
 
     socketInstance.on('connect', () => {
@@ -196,11 +211,23 @@ export default function RoomPage() {
           id: `${senderId}-${timestamp}`,
           content: '',
           type: 'file',
-          file: fileData,
+          file: {
+            name: fileData.name,
+            size: fileData.size,
+            type: fileData.type,
+            data: fileData.data,
+            thumbnail: fileData.thumbnail,
+          },
           senderId,
           senderName,
           timestamp,
           isSent: false,
+          viewOnce: fileData.viewOnce,
+          viewedBy: [],
+          selfDestruct: fileData.selfDestruct,
+          downloadable: fileData.downloadable,
+          // Start timer immediately for non-view-once self-destruct images
+          timerStartedAt: (fileData.selfDestruct && !fileData.viewOnce) ? Date.now() : undefined,
         };
 
         setMessages(prev => {
@@ -262,17 +289,31 @@ export default function RoomPage() {
           setDownloadProgress(90);
           
           const newMessage: Message = {
-            id: `${from}-${Date.now()}`,
+            id: `${from}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             content: '',
             type: 'file',
-            file: fileData,
+            file: {
+              name: fileData.name,
+              size: fileData.size,
+              type: fileData.type,
+              data: fileData.data,
+              thumbnail: fileData.thumbnail,
+            },
             senderId: from,
             senderName: users.find((u: RoomUser) => u.id === from)?.name || 'Unknown',
             timestamp: Date.now(),
             isSent: false,
+            viewOnce: fileData.viewOnce,
+            viewedBy: [],
+            selfDestruct: fileData.selfDestruct,
+            downloadable: fileData.downloadable,
+            // Start timer immediately for non-view-once self-destruct images
+            timerStartedAt: (fileData.selfDestruct && !fileData.viewOnce) ? Date.now() : undefined,
           };
 
           setMessages(prev => {
+            const messageExists = prev.some(m => m.id === newMessage.id);
+            if (messageExists) return prev;
             const updated = [...prev, newMessage];
             saveRoomData(roomCode, updated, extendedRetention);
             return updated;
@@ -337,7 +378,7 @@ export default function RoomPage() {
     };
   }, [encryptionKey, socket, roomCode, extendedRetention, users]);
 
-  const handleSendMessage = useCallback(async (content: string, attachment?: { file: File; useP2P: boolean }) => {
+  const handleSendMessage = useCallback(async (content: string, attachment?: { file: File; useP2P: boolean; viewOnce?: boolean; selfDestruct?: number; downloadable?: boolean }) => {
     if (!socket || !encryptionKey || !isConnected) return;
     if (!content.trim() && !attachment) return;
 
@@ -387,7 +428,13 @@ export default function RoomPage() {
               clearTimeout(timeout);
               setUploadProgress(60);
               setTimeout(() => {
-                const dataStr = JSON.stringify(prepared);
+                const dataWithOptions = {
+                  ...prepared,
+                  viewOnce: attachment.viewOnce,
+                  selfDestruct: attachment.selfDestruct,
+                  downloadable: attachment.downloadable,
+                };
+                const dataStr = JSON.stringify(dataWithOptions);
                 setUploadProgress(80);
                 peer.send(dataStr);
                 setUploadProgress(95);
@@ -413,7 +460,13 @@ export default function RoomPage() {
           }
         } else {
           setTransferMode('direct');
-          const encrypted = await encryptMessage(JSON.stringify(prepared), encryptionKey);
+          const fileDataWithOptions = {
+            ...prepared,
+            viewOnce: attachment.viewOnce,
+            selfDestruct: attachment.selfDestruct,
+            downloadable: attachment.downloadable,
+          };
+          const encrypted = await encryptMessage(JSON.stringify(fileDataWithOptions), encryptionKey);
           socket.emit('send-file', {
             roomId: roomCode,
             encryptedFile: encrypted,
@@ -431,6 +484,12 @@ export default function RoomPage() {
           senderName: username,
           timestamp,
           isSent: true,
+          viewOnce: attachment.viewOnce,
+          viewedBy: [],
+          selfDestruct: attachment.selfDestruct,
+          downloadable: attachment.downloadable,
+          // Start timer immediately for non-view-once self-destruct images
+          timerStartedAt: (attachment.selfDestruct && !attachment.viewOnce) ? Date.now() : undefined,
         };
 
         setMessages(prev => {
@@ -516,14 +575,26 @@ export default function RoomPage() {
     });
   }, [socket, roomCode, extendedRetention]);
 
+  const updateMessageTimer = useCallback((messageId: string, timerStartedAt: number) => {
+    setMessages(prev => {
+      const updated = prev.map(msg =>
+        msg.id === messageId
+          ? { ...msg, timerStartedAt }
+          : msg
+      );
+      saveRoomData(roomCode, updated, extendedRetention);
+      return updated;
+    });
+  }, [roomCode, extendedRetention]);
+
   const handleTyping = useCallback((isTyping: boolean) => {
-    if (!socket) return;
+    if (!socket || !isConnected) return;
     if (isTyping) {
       socket.emit('typing-start', { roomId: roomCode, username });
     } else {
       socket.emit('typing-stop', roomCode);
     }
-  }, [socket, roomCode, username]);
+  }, [socket, isConnected, roomCode, username]);
 
   const toggleRetention = useCallback(() => {
     const newRetention = !extendedRetention;
@@ -534,24 +605,52 @@ export default function RoomPage() {
     saveUserPreferences({ ...prefs, extendedRetention: newRetention });
   }, [extendedRetention, roomCode, messages]);
 
+  const handleLockSession = useCallback(() => {
+    if (hasSessionPin) {
+      setIsLocked(true);
+    } else {
+      setShowLockSetup(true);
+    }
+  }, [hasSessionPin]);
+
+  const handleUnlockSession = useCallback(() => {
+    setIsLocked(false);
+  }, []);
+
+  const handleLockSetupComplete = useCallback(() => {
+    setHasSessionPin(true);
+    setShowLockSetup(false);
+  }, []);
+
   const onlineUsers = useMemo(() => {
     const now = Date.now();
     return users.filter((u: RoomUser) => now - u.lastSeen < 60000);
   }, [users]);
 
   return (
-    <div className="flex flex-col h-screen bg-black">
-      <RoomHeader 
-        roomCode={roomCode} 
-        users={onlineUsers}
-        extendedRetention={extendedRetention}
-        onToggleRetention={toggleRetention}
-      />
+    <>
+      {isLocked && <SessionLock onUnlock={handleUnlockSession} />}
+      {showLockSetup && (
+        <SessionLockSetup 
+          onComplete={handleLockSetupComplete}
+          onCancel={() => setShowLockSetup(false)}
+        />
+      )}
+      <div className="flex flex-col h-screen bg-black">
+        <RoomHeader 
+          roomCode={roomCode} 
+          users={onlineUsers}
+          extendedRetention={extendedRetention}
+          onToggleRetention={toggleRetention}
+          onLockSession={handleLockSession}
+          hasSessionPin={hasSessionPin}
+        />
       <ChatMessages 
         messages={messages} 
         currentUserId={socket?.id || ''} 
         onEditMessage={handleEditMessage}
         onDeleteMessage={handleDeleteMessage}
+        onUpdateMessageTimer={updateMessageTimer}
         editingMessage={editingMessage}
         setEditingMessage={setEditingMessage}
       />
@@ -606,6 +705,7 @@ export default function RoomPage() {
         onTyping={handleTyping}
         disabled={!isConnected} 
       />
-    </div>
+      </div>
+    </>
   );
 }

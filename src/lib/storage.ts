@@ -15,6 +15,11 @@ export interface Message {
     data: string;
     thumbnail?: string;
   };
+  viewOnce?: boolean;
+  viewedBy?: string[];
+  selfDestruct?: number;
+  downloadable?: boolean;
+  timerStartedAt?: number; // Timestamp when self-destruct timer started
 }
 
 export interface RoomStorage {
@@ -51,13 +56,13 @@ export const saveRoomData = (roomCode: string, messages: Message[], extendedRete
   const now = Date.now();
   const retention = extendedRetention ? SEVEN_WEEKS_MS : ONE_DAY_MS;
   
-  const MAX_MESSAGES = 100;
+  const MAX_MESSAGES = 50;
   let trimmedMessages = messages.slice(-MAX_MESSAGES);
   
   trimmedMessages = trimmedMessages.map(msg => {
     if (msg.type === 'file' && msg.file?.data) {
       const fileSizeMB = msg.file.data.length / (1024 * 1024);
-      if (fileSizeMB > 2) {
+      if (fileSizeMB > 1) {
         return {
           ...msg,
           file: {
