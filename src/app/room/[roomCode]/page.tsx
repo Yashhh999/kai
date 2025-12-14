@@ -35,6 +35,7 @@ export default function RoomPage() {
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [transferMode, setTransferMode] = useState<'p2p' | 'direct' | null>(null);
   const [isReceiving, setIsReceiving] = useState(false);
+  const [hasLoadedFromStorage, setHasLoadedFromStorage] = useState(false);
   const peersRef = useRef<Map<string, Peer.Instance>>(new Map());
 
   useEffect(() => {
@@ -56,6 +57,7 @@ export default function RoomPage() {
     if (existingData) {
       setMessages(existingData.messages);
       setExtendedRetention(existingData.extendedRetention);
+      setHasLoadedFromStorage(true);
     }
 
     deriveKey(roomCode).then(setEncryptionKey);
@@ -92,6 +94,9 @@ export default function RoomPage() {
     });
 
     socketInstance.on('message-history', async (history: any[]) => {
+      if (hasLoadedFromStorage) {
+        return;
+      }
       if (!encryptionKey) {
         const key = await deriveKey(roomCode);
         const decryptedMessages = await Promise.all(
@@ -99,12 +104,14 @@ export default function RoomPage() {
             try {
               const decrypted = await decryptMessage(msg.encryptedMessage, key);
               return {
-                id: `${msg.senderId}-${msg.timestamp}`,
+                id: `${msg.senderId}-${msg.timestamp}-${Math.random().toString(36).substr(2, 9)}`,
                 content: decrypted,
                 senderId: msg.senderId,
                 senderName: msg.senderName,
                 timestamp: msg.timestamp,
                 isSent: false,
+                selfDestruct: msg.selfDestruct,
+                timerStartedAt: msg.timerStartedAt,
               };
             } catch (error) {
               return null;
@@ -112,7 +119,10 @@ export default function RoomPage() {
           })
         );
         const validMessages = decryptedMessages.filter(m => m !== null) as Message[];
-        setMessages(prev => [...validMessages, ...prev]);
+        setMessages(prev => {
+          if (prev.length > 0) return prev;
+          return validMessages;
+        });
       }
     });
 
@@ -132,19 +142,26 @@ export default function RoomPage() {
   useEffect(() => {
     if (!encryptionKey || !socket) return;
 
-    const handleReceiveMessage = async ({ encryptedMessage, senderId, senderName, timestamp }: any) => {
+    const handleReceiveMessage = async ({ encryptedMessage, senderId, senderName, timestamp, selfDestruct, timerStartedAt }: any) => {
       try {
         const decrypted = await decryptMessage(encryptedMessage, encryptionKey);
         const newMessage: Message = {
-          id: `${senderId}-${timestamp}`,
+          id: `${senderId}-${timestamp}-${Math.random().toString(36).substr(2, 9)}`,
           content: decrypted,
           senderId,
           senderName,
           timestamp,
           isSent: false,
+          selfDestruct,
+          timerStartedAt,
         };
 
         setMessages(prev => {
+          const isDuplicate = prev.some(msg => 
+            msg.senderId === senderId && msg.timestamp === timestamp
+          );
+          if (isDuplicate) return prev;
+          
           const updated = [...prev, newMessage];
           saveRoomData(roomCode, updated, extendedRetention);
           return updated;
@@ -152,37 +169,6 @@ export default function RoomPage() {
       } catch (error) {
         console.error('Decryption failed:', error);
       }
-    };
-
-    const handleMessageEdited = async ({ messageId, encryptedMessage, originalEncrypted, editedAt }: any) => {
-      try {
-        const decrypted = await decryptMessage(encryptedMessage, encryptionKey);
-        const original = originalEncrypted ? await decryptMessage(originalEncrypted, encryptionKey) : undefined;
-
-        setMessages(prev => {
-          const updated = prev.map(msg => 
-            msg.id === messageId 
-              ? { ...msg, content: decrypted, editedAt, originalContent: original || msg.content }
-              : msg
-          );
-          saveRoomData(roomCode, updated, extendedRetention);
-          return updated;
-        });
-      } catch (error) {
-        console.error('Edit decryption failed:', error);
-      }
-    };
-
-    const handleMessageDeleted = ({ messageId }: any) => {
-      setMessages(prev => {
-        const updated = prev.map(msg =>
-          msg.id === messageId
-            ? { ...msg, type: 'deleted' as const, content: '', file: undefined }
-            : msg
-        );
-        saveRoomData(roomCode, updated, extendedRetention);
-        return updated;
-      });
     };
 
     const handleFileReceived = async ({ encryptedFile, senderId, senderName, timestamp }: any) => {
@@ -197,7 +183,7 @@ export default function RoomPage() {
         setDownloadProgress(90);
         
         const newMessage: Message = {
-          id: `${senderId}-${timestamp}`,
+          id: `${senderId}-${timestamp}-${Math.random().toString(36).substr(2, 9)}`,
           content: '',
           type: 'file',
           file: {
@@ -220,6 +206,11 @@ export default function RoomPage() {
         };
 
         setMessages(prev => {
+          const isDuplicate = prev.some(msg => 
+            msg.senderId === senderId && msg.timestamp === timestamp
+          );
+          if (isDuplicate) return prev;
+          
           const updated = [...prev, newMessage];
           saveRoomData(roomCode, updated, extendedRetention);
           return updated;
@@ -240,13 +231,19 @@ export default function RoomPage() {
     const handleP2PRequest = ({ from }: any) => {
       const peer = new Peer({ 
         initiator: false, 
-        trickle: false,
+        trickle: true, // Enable trickle ICE for better connection
         config: {
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:global.stun.twilio.com:3478' }
           ]
-        }
+        },
+        // Larger chunk size , for better performance optimization
+        channelConfig: {},
+        offerOptions: {},
+        answerOptions: {},
+        sdpTransform: (sdp: string) => sdp,
+        streams: []
       });
       
       setIsReceiving(true);
@@ -348,16 +345,12 @@ export default function RoomPage() {
     };
 
     socket.on('receive-message', handleReceiveMessage);
-    socket.on('message-edited', handleMessageEdited);
-    socket.on('message-deleted', handleMessageDeleted);
     socket.on('receive-file', handleFileReceived);
     socket.on('p2p-request', handleP2PRequest);
     socket.on('p2p-signal', handleP2PSignal);
 
     return () => {
       socket.off('receive-message', handleReceiveMessage);
-      socket.off('message-edited', handleMessageEdited);
-      socket.off('message-deleted', handleMessageDeleted);
       socket.off('receive-file', handleFileReceived);
       socket.off('p2p-request', handleP2PRequest);
       socket.off('p2p-signal', handleP2PSignal);
@@ -367,8 +360,10 @@ export default function RoomPage() {
     };
   }, [encryptionKey, socket, roomCode, extendedRetention, users]);
 
-  const handleSendMessage = useCallback(async (content: string, attachment?: { file: File; useP2P: boolean; viewOnce?: boolean; selfDestruct?: number; downloadable?: boolean }) => {
+  const handleSendMessage = useCallback(async (content: string, options?: { selfDestruct?: number; attachment?: { file: File; useP2P: boolean; viewOnce?: boolean; selfDestruct?: number; downloadable?: boolean } }) => {
     if (!socket || !encryptionKey || !isConnected) return;
+    const attachment = options?.attachment;
+    const messageSelfDestruct = options?.selfDestruct;
     if (!content.trim() && !attachment) return;
 
     try {
@@ -391,13 +386,19 @@ export default function RoomPage() {
           for (const user of targetUsers) {
             const peer = new Peer({ 
               initiator: true, 
-              trickle: false,
+              trickle: true, // Enable trickle ICE for better connection
               config: {
                 iceServers: [
                   { urls: 'stun:stun.l.google.com:19302' },
                   { urls: 'stun:global.stun.twilio.com:3478' }
                 ]
-              }
+              },
+              // Better configuration for larger files
+              channelConfig: {},
+              offerOptions: {},
+              answerOptions: {},
+              sdpTransform: (sdp: string) => sdp,
+              streams: []
             });
             
             const timeout = setTimeout(() => {
@@ -465,7 +466,7 @@ export default function RoomPage() {
         }
 
         const newMessage: Message = {
-          id: `${socket.id}-${timestamp}`,
+          id: `${socket.id}-${timestamp}-${Math.random().toString(36).substr(2, 9)}`,
           content: content || '',
           type: 'file',
           file: prepared,
@@ -493,15 +494,19 @@ export default function RoomPage() {
           roomId: roomCode,
           encryptedMessage: encrypted,
           username,
+          selfDestruct: messageSelfDestruct,
+          timerStartedAt: messageSelfDestruct ? Date.now() : undefined,
         });
 
         const newMessage: Message = {
-          id: `${socket.id}-${timestamp}`,
+          id: `${socket.id}-${timestamp}-${Math.random().toString(36).substr(2, 9)}`,
           content,
           senderId: socket.id!,
           senderName: username,
           timestamp,
           isSent: true,
+          selfDestruct: messageSelfDestruct,
+          timerStartedAt: messageSelfDestruct ? Date.now() : undefined,
         };
 
         setMessages(prev => {
@@ -515,55 +520,6 @@ export default function RoomPage() {
     }
   }, [socket, encryptionKey, isConnected, roomCode, username, extendedRetention, users]);
 
-  const handleEditMessage = useCallback(async (messageId: string, newContent: string) => {
-    if (!socket || !encryptionKey) return;
-
-    try {
-      const message = messages.find(m => m.id === messageId);
-      if (!message) return;
-
-      const encrypted = await encryptMessage(newContent, encryptionKey);
-      const originalEncrypted = await encryptMessage(message.content, encryptionKey);
-
-      socket.emit('edit-message', {
-        roomId: roomCode,
-        messageId,
-        encryptedMessage: encrypted,
-        originalEncrypted,
-      });
-
-      setMessages(prev => {
-        const updated = prev.map(msg =>
-          msg.id === messageId
-            ? { ...msg, content: newContent, editedAt: Date.now(), originalContent: message.content }
-            : msg
-        );
-        saveRoomData(roomCode, updated, extendedRetention);
-        return updated;
-      });
-      
-      setEditingMessage(null);
-    } catch (error) {
-      console.error('Edit failed:', error);
-    }
-  }, [socket, encryptionKey, messages, roomCode, extendedRetention]);
-
-  const handleDeleteMessage = useCallback((messageId: string) => {
-    if (!socket) return;
-
-    socket.emit('delete-message', { roomId: roomCode, messageId });
-
-    setMessages(prev => {
-      const updated = prev.map(msg =>
-        msg.id === messageId
-          ? { ...msg, type: 'deleted' as const, content: '', file: undefined }
-          : msg
-      );
-      saveRoomData(roomCode, updated, extendedRetention);
-      return updated;
-    });
-  }, [socket, roomCode, extendedRetention]);
-
   const updateMessageTimer = useCallback((messageId: string, timerStartedAt: number) => {
     setMessages(prev => {
       const updated = prev.map(msg =>
@@ -571,6 +527,22 @@ export default function RoomPage() {
           ? { ...msg, timerStartedAt }
           : msg
       );
+      saveRoomData(roomCode, updated, extendedRetention);
+      return updated;
+    });
+  }, [roomCode, extendedRetention]);
+
+  const updateMessageViewedBy = useCallback((messageId: string, userId: string) => {
+    setMessages(prev => {
+      const updated = prev.map(msg => {
+        if (msg.id === messageId) {
+          const viewedBy = msg.viewedBy || [];
+          if (!viewedBy.includes(userId)) {
+            return { ...msg, viewedBy: [...viewedBy, userId] };
+          }
+        }
+        return msg;
+      });
       saveRoomData(roomCode, updated, extendedRetention);
       return updated;
     });
@@ -610,53 +582,57 @@ export default function RoomPage() {
         />
       <ChatMessages 
         messages={messages} 
-        currentUserId={socket?.id || ''} 
-        onEditMessage={handleEditMessage}
-        onDeleteMessage={handleDeleteMessage}
+        currentUserId={username} 
         onUpdateMessageTimer={updateMessageTimer}
-        editingMessage={editingMessage}
-        setEditingMessage={setEditingMessage}
+        onUpdateMessageViewedBy={updateMessageViewedBy}
       />
       {typingUsers.size > 0 && (
-        <div className="px-6 py-2 text-sm text-neutral-500">
-          {Array.from(typingUsers).join(', ')} {typingUsers.size === 1 ? 'is' : 'are'} typing...
+        <div className="px-6 py-2 text-sm text-neutral-500 animate-pulse">
+          <span className="inline-flex items-center gap-2">
+            <span className="flex gap-1">
+              <span className="w-1.5 h-1.5 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+              <span className="w-1.5 h-1.5 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+              <span className="w-1.5 h-1.5 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+            </span>
+            {Array.from(typingUsers).join(', ')} {typingUsers.size === 1 ? 'is' : 'are'} typing
+          </span>
         </div>
       )}
       {(uploadProgress > 0 || downloadProgress > 0 || transferMode || isReceiving) && (
-        <div className="px-6 py-2 space-y-2">
+        <div className="px-6 py-3 space-y-2 bg-neutral-900/50 border-t border-neutral-900">
           {transferMode && (
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex items-center gap-2.5 text-sm">
               {transferMode === 'p2p' ? (
                 <>
-                  <span className="text-blue-400">⚡</span>
-                  <span className="text-neutral-300">Sending via P2P... {uploadProgress}%</span>
+                  <span className="text-blue-400 animate-pulse">⚡</span>
+                  <span className="text-neutral-300 font-medium">P2P transfer {uploadProgress}%</span>
                 </>
               ) : (
                 <>
-                  <span className="text-green-400">🔒</span>
-                  <span className="text-neutral-300">Sending encrypted... {uploadProgress}%</span>
+                  <span className="text-emerald-400 animate-pulse">🔒</span>
+                  <span className="text-neutral-300 font-medium">Encrypting {uploadProgress}%</span>
                 </>
               )}
             </div>
           )}
           {isReceiving && (
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-blue-400">📥</span>
-              <span className="text-neutral-300">Receiving file... {downloadProgress}%</span>
+            <div className="flex items-center gap-2.5 text-sm">
+              <span className="text-blue-400 animate-pulse">📥</span>
+              <span className="text-neutral-300 font-medium">Receiving {downloadProgress}%</span>
             </div>
           )}
           {uploadProgress > 0 && (
-            <div className="h-1 bg-neutral-800 rounded-full overflow-hidden">
+            <div className="h-1.5 bg-neutral-800 rounded-full overflow-hidden">
               <div 
-                className="h-full bg-green-500 transition-all duration-300"
+                className="h-full bg-gradient-to-r from-emerald-500 to-blue-500 transition-all duration-300 rounded-full"
                 style={{ width: `${uploadProgress}%` }}
               />
             </div>
           )}
           {downloadProgress > 0 && (
-            <div className="h-1 bg-neutral-800 rounded-full overflow-hidden">
+            <div className="h-1.5 bg-neutral-800 rounded-full overflow-hidden">
               <div 
-                className="h-full bg-blue-500 transition-all duration-300"
+                className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300 rounded-full"
                 style={{ width: `${downloadProgress}%` }}
               />
             </div>

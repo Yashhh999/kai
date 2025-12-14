@@ -5,9 +5,7 @@ export interface Message {
   senderName: string;
   timestamp: number;
   isSent: boolean;
-  editedAt?: number;
-  originalContent?: string;
-  type?: 'text' | 'file' | 'deleted';
+  type?: 'text' | 'file';
   file?: {
     name: string;
     size: number;
@@ -89,16 +87,29 @@ export const saveRoomData = (roomCode: string, messages: Message[], extendedRete
   } catch (error) {
     console.error('Storage save failed (quota exceeded):', error);
     
-    const reducedMessages = trimmedMessages.slice(-50).map(msg => ({
+    // More aggressive cleanup: keep only last 30 messages, strip all files
+    const reducedMessages = trimmedMessages.slice(-30).map(msg => ({
       ...msg,
-      file: msg.file ? { ...msg.file, data: '', thumbnail: undefined } : undefined
+      file: undefined,
+      originalContent: undefined
     }));
     
+    const reducedData = { ...data, messages: reducedMessages };
+    
     try {
-      const reducedData = { ...data, messages: reducedMessages };
       localStorage.setItem(`${STORAGE_KEY_PREFIX}${roomCode}`, JSON.stringify(reducedData));
     } catch (e) {
       console.error('Failed to save even reduced data:', e);
+      // Last resort: clear old rooms
+      try {
+        const keys = Object.keys(localStorage).filter(k => k.startsWith(STORAGE_KEY_PREFIX));
+        if (keys.length > 1) {
+          keys.slice(0, -1).forEach(k => localStorage.removeItem(k));
+          localStorage.setItem(`${STORAGE_KEY_PREFIX}${roomCode}`, JSON.stringify(reducedData));
+        }
+      } catch (finalError) {
+        console.error('All storage save attempts failed:', finalError);
+      }
     }
   }
 };

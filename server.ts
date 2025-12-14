@@ -84,7 +84,7 @@ app.prepare().then(() => {
       origin: '*',
       methods: ['GET', 'POST'],
     },
-    maxHttpBufferSize: 10 * 1024 * 1024,
+    maxHttpBufferSize: 100 * 1024 * 1024, // 100MB for larger files
     pingTimeout: 60000,
     pingInterval: 25000,
     connectTimeout: 45000,
@@ -158,7 +158,7 @@ app.prepare().then(() => {
       socket.to(roomId).emit('user-typing', { userId: socket.id, isTyping: false });
     });
 
-    socket.on('send-message', ({ roomId, encryptedMessage, username }) => {
+    socket.on('send-message', ({ roomId, encryptedMessage, username, selfDestruct, timerStartedAt }) => {
       if (!checkRateLimit(socket.id)) {
         return;
       }
@@ -168,6 +168,8 @@ app.prepare().then(() => {
         senderId: socket.id,
         senderName: username,
         timestamp: Date.now(),
+        selfDestruct,
+        timerStartedAt,
       };
       
       const room = rooms.get(roomId);
@@ -190,10 +192,6 @@ app.prepare().then(() => {
       });
     });
 
-    socket.on('delete-message', ({ roomId, messageId }) => {
-      io.to(roomId).emit('message-deleted', { messageId });
-    });
-
     socket.on('p2p-signal', ({ to, roomId, signal }) => {
       io.to(to).emit('p2p-signal', {
         from: socket.id,
@@ -204,15 +202,6 @@ app.prepare().then(() => {
     socket.on('p2p-request', ({ to, roomId }) => {
       io.to(to).emit('p2p-request', {
         from: socket.id,
-      });
-    });
-
-    socket.on('edit-message', ({ roomId, messageId, encryptedMessage, originalEncrypted }) => {
-      io.to(roomId).emit('message-edited', {
-        messageId,
-        encryptedMessage,
-        originalEncrypted,
-        editedAt: Date.now(),
       });
     });
 
