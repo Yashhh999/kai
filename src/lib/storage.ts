@@ -54,6 +54,9 @@ export const saveRoomData = (roomCode: string, messages: Message[], extendedRete
   const now = Date.now();
   const retention = extendedRetention ? SEVEN_WEEKS_MS : ONE_DAY_MS;
   
+  const existingData = loadRoomData(roomCode);
+  const originalCreatedAt = existingData?.createdAt || now;
+  
   const MAX_MESSAGES = 50;
   let trimmedMessages = messages.slice(-MAX_MESSAGES);
   
@@ -77,8 +80,8 @@ export const saveRoomData = (roomCode: string, messages: Message[], extendedRete
   const data: RoomStorage = {
     roomCode,
     messages: trimmedMessages,
-    createdAt: now,
-    expiresAt: now + retention,
+    createdAt: originalCreatedAt,
+    expiresAt: originalCreatedAt + retention,
     extendedRetention,
   };
   
@@ -182,4 +185,15 @@ export const getAllStoredRooms = (): string[] => {
     console.error('Get rooms failed:', error);
     return [];
   }
+};
+
+export const getRoomExpiryInfo = (roomCode: string): { expiresAt: number; createdAt: number; timeRemaining: number } | null => {
+  const data = loadRoomData(roomCode);
+  if (!data) return null;
+  
+  return {
+    expiresAt: data.expiresAt,
+    createdAt: data.createdAt,
+    timeRemaining: Math.max(0, data.expiresAt - Date.now()),
+  };
 };
