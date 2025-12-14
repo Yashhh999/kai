@@ -16,6 +16,11 @@ interface RoomUser {
   lastSeen: number;
 }
 
+interface TypingUser {
+  username: string;
+  timeout: NodeJS.Timeout;
+}
+
 interface Room {
   users: Map<string, RoomUser>;
   createdAt: number;
@@ -25,6 +30,7 @@ interface Room {
     senderName: string;
     timestamp: number;
   }>;
+  typingUsers: Map<string, TypingUser>;
 }
 
 const rooms = new Map<string, Room>();
@@ -112,6 +118,7 @@ app.prepare().then(() => {
           users: new Map([[socket.id, { id: socket.id, name: username, lastSeen: Date.now() }]]),
           createdAt: Date.now(),
           messageHistory: [],
+          typingUsers: new Map(),
         });
       } else {
         const room = rooms.get(roomId)!;
@@ -151,11 +158,32 @@ app.prepare().then(() => {
     });
 
     socket.on('typing-start', ({ roomId, username }: { roomId: string; username: string }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      if (room.typingUsers.has(socket.id)) {
+        clearTimeout(room.typingUsers.get(socket.id)!.timeout);
+      }
+
+      const timeout = setTimeout(() => {
+        room.typingUsers.delete(socket.id);
+        socket.to(roomId).emit('user-typing', { userId: socket.id, username, isTyping: false });
+      }, 4000);
+
+      room.typingUsers.set(socket.id, { username, timeout });
       socket.to(roomId).emit('user-typing', { userId: socket.id, username, isTyping: true });
     });
 
     socket.on('typing-stop', (roomId: string) => {
-      socket.to(roomId).emit('user-typing', { userId: socket.id, isTyping: false });
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      const typingUser = room.typingUsers.get(socket.id);
+      if (typingUser) {
+        clearTimeout(typingUser.timeout);
+        room.typingUsers.delete(socket.id);
+        socket.to(roomId).emit('user-typing', { userId: socket.id, username: typingUser.username, isTyping: false });
+      }
     });
 
     socket.on('send-message', ({ roomId, encryptedMessage, username, selfDestruct, timerStartedAt }) => {
@@ -219,6 +247,13 @@ app.prepare().then(() => {
       for (const [roomId, room] of rooms.entries()) {
         if (room.users.has(socket.id)) {
           room.users.delete(socket.id);
+          
+          const typingUser = room.typingUsers.get(socket.id);
+          if (typingUser) {
+            clearTimeout(typingUser.timeout);
+            room.typingUsers.delete(socket.id);
+          }
+          
           if (room.users.size === 0) {
             rooms.delete(roomId);
           } else {

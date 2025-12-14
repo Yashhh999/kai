@@ -114,7 +114,7 @@ export default function ChatInput({ onSendMessage, onTyping, disabled }: ChatInp
 
     if (value.trim()) {
       onTyping(true);
-      typingTimeoutRef.current = setTimeout(() => onTyping(false), 2000);
+      typingTimeoutRef.current = setTimeout(() => onTyping(false), 3000);
     } else {
       onTyping(false);
     }
