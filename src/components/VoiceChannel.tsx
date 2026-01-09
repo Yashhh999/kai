@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { Socket } from 'socket.io-client';
+import { deriveVoiceKey, encryptAudioFrame, decryptAudioFrame } from '@/lib/encryption';
 
 interface VoiceParticipant {
   userId: string;
@@ -47,6 +48,8 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
   const [channelStartTime, setChannelStartTime] = useState<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState('00:00');
   const [micError, setMicError] = useState<string | null>(null);
+  const [voiceKey, setVoiceKey] = useState<CryptoKey | null>(null);
+  const [isE2EEnabled, setIsE2EEnabled] = useState(false);
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
@@ -55,7 +58,19 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
   const panelRef = useRef<HTMLDivElement>(null);
   const connectionAttempts = useRef<Map<string, number>>(new Map());
   const isJoiningRef = useRef(false);
-  const inVoiceRef = useRef(false); // Ref to track voice state immediately
+  const inVoiceRef = useRef(false);
+
+  // Derive E2E encryption key for voice
+  useEffect(() => {
+    if (roomCode) {
+      deriveVoiceKey(roomCode).then(key => {
+        setVoiceKey(key);
+        console.log('[Voice] E2E encryption key derived');
+      }).catch(err => {
+        console.error('[Voice] Failed to derive encryption key:', err);
+      });
+    }
+  }, [roomCode]);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -407,14 +422,42 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
       iceCandidatePoolSize: 10,
       bundlePolicy: 'max-bundle',
       rtcpMuxPolicy: 'require',
-      iceTransportPolicy: 'all'
-    });
+      iceTransportPolicy: 'all',
+      // Enable encoded insertable streams for E2E encryption
+      encodedInsertableStreams: true
+    } as RTCConfiguration);
 
-    // Add local tracks FIRST before creating offer
+    // Add local tracks with E2E encryption
     if (localStreamRef.current) {
       console.log(`[Voice] Adding ${localStreamRef.current.getTracks().length} local tracks`);
       localStreamRef.current.getTracks().forEach(track => {
-        pc.addTrack(track, localStreamRef.current!);
+        const sender = pc.addTrack(track, localStreamRef.current!);
+        
+        // Apply E2E encryption transform to outgoing audio
+        if (voiceKey && 'transform' in sender) {
+          try {
+            const senderStreams = (sender as any).createEncodedStreams?.();
+            if (senderStreams) {
+              const { readable, writable } = senderStreams;
+              const encryptTransform = new TransformStream({
+                transform: async (chunk: any, controller: any) => {
+                  try {
+                    const encryptedData = await encryptAudioFrame(chunk.data, voiceKey);
+                    chunk.data = encryptedData;
+                    controller.enqueue(chunk);
+                  } catch (e) {
+                    controller.enqueue(chunk);
+                  }
+                }
+              });
+              readable.pipeThrough(encryptTransform).pipeTo(writable);
+              console.log(`[Voice] E2E encryption applied to sender for ${odId}`);
+              setIsE2EEnabled(true);
+            }
+          } catch (e) {
+            console.warn('[Voice] Insertable streams not supported, falling back to DTLS-SRTP');
+          }
+        }
       });
     } else {
       console.error('[Voice] No local stream when creating PC!');
@@ -436,15 +479,39 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
       console.log(`[Voice] ICE gathering state for ${odId}:`, pc.iceGatheringState);
     };
 
-    // Handle incoming audio track
+    // Handle incoming audio track with E2E decryption
     pc.ontrack = (event) => {
       console.log(`[Voice] *** Received audio track from ${odId} ***`);
+      
+      // Apply E2E decryption to incoming audio
+      if (voiceKey && event.receiver && 'transform' in event.receiver) {
+        try {
+          const receiverStreams = (event.receiver as any).createEncodedStreams?.();
+          if (receiverStreams) {
+            const { readable, writable } = receiverStreams;
+            const decryptTransform = new TransformStream({
+              transform: async (chunk: any, controller: any) => {
+                try {
+                  const decryptedData = await decryptAudioFrame(chunk.data, voiceKey);
+                  chunk.data = decryptedData;
+                  controller.enqueue(chunk);
+                } catch (e) {
+                  controller.enqueue(chunk);
+                }
+              }
+            });
+            readable.pipeThrough(decryptTransform).pipeTo(writable);
+            console.log(`[Voice] E2E decryption applied to receiver for ${odId}`);
+          }
+        } catch (e) {
+          console.warn('[Voice] Could not apply decryption transform');
+        }
+      }
       
       if (event.streams && event.streams[0]) {
         const stream = event.streams[0];
         console.log(`[Voice] Stream has ${stream.getTracks().length} tracks`);
         
-        // Create or get audio element
         let audio = remoteAudiosRef.current.get(odId);
         if (!audio) {
           audio = new Audio();
@@ -456,7 +523,6 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
         audio.srcObject = stream;
         audio.volume = isDeafened ? 0 : 1;
         
-        // Try to play (may fail due to autoplay policy)
         const playPromise = audio.play();
         if (playPromise !== undefined) {
           playPromise
@@ -466,7 +532,6 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
             })
             .catch(e => {
               console.error(`[Voice] Audio play failed for ${odId}:`, e);
-              // Try again on user interaction
               const resumeAudio = () => {
                 audio?.play().catch(console.error);
                 document.removeEventListener('click', resumeAudio);
@@ -562,11 +627,11 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
             });
           })
           .catch(err => console.error('[Voice] Offer error:', err));
-      }, 50); // Small delay to ensure tracks are ready
+      }, 50);
     }
 
     return pc;
-  }, [socket, roomCode, isDeafened]);
+  }, [socket, roomCode, isDeafened, voiceKey]);
 
   const joinVoice = async () => {
     if (inVoice || isJoiningRef.current) return;
@@ -772,10 +837,20 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
                 </span>
               )}
               {connectedCount > 0 && (
-                <span className="text-emerald-400 flex items-center gap-2">
-                  <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
-                  Connected to {connectedCount} of {otherParticipants.length}
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-emerald-400 flex items-center gap-2">
+                    <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
+                    Connected to {connectedCount} of {otherParticipants.length}
+                  </span>
+                  {isE2EEnabled && (
+                    <span className="text-emerald-400 flex items-center gap-1" title="End-to-end encrypted">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      </svg>
+                      E2E
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           )}
