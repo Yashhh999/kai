@@ -66,17 +66,13 @@ export default function RoomPage() {
 
     deriveKey(roomCode).then(setEncryptionKey);
 
-    // Determine socket URL - use current origin for production/mobile, or env var for development
     const getSocketUrl = () => {
-      // If we have an explicit API URL set, use it
       if (process.env.NEXT_PUBLIC_API_URL) {
         return process.env.NEXT_PUBLIC_API_URL;
       }
-      // In browser, use the current origin (works for both desktop and mobile)
       if (typeof window !== 'undefined') {
         return window.location.origin;
       }
-      // Fallback for SSR
       return 'http://localhost:3000';
     };
 
@@ -219,7 +215,6 @@ export default function RoomPage() {
           viewedBy: [],
           selfDestruct: fileData.selfDestruct,
           downloadable: fileData.downloadable,
-          // Start timer immediately for non-view-once self-destruct images
           timerStartedAt: (fileData.selfDestruct && !fileData.viewOnce) ? Date.now() : undefined,
         };
 
@@ -249,14 +244,13 @@ export default function RoomPage() {
     const handleP2PRequest = ({ from }: any) => {
       const peer = new Peer({ 
         initiator: false, 
-        trickle: true, // Enable trickle ICE for better connection
+        trickle: true,
         config: {
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:global.stun.twilio.com:3478' }
           ]
         },
-        // Larger chunk size , for better performance optimization
         channelConfig: {},
         offerOptions: {},
         answerOptions: {},
@@ -311,7 +305,6 @@ export default function RoomPage() {
             viewedBy: [],
             selfDestruct: fileData.selfDestruct,
             downloadable: fileData.downloadable,
-            // Start timer immediately for non-view-once self-destruct images
             timerStartedAt: (fileData.selfDestruct && !fileData.viewOnce) ? Date.now() : undefined,
           };
 
@@ -404,14 +397,13 @@ export default function RoomPage() {
           for (const user of targetUsers) {
             const peer = new Peer({ 
               initiator: true, 
-              trickle: true, // Enable trickle ICE for better connection
+              trickle: true,
               config: {
                 iceServers: [
                   { urls: 'stun:stun.l.google.com:19302' },
                   { urls: 'stun:global.stun.twilio.com:3478' }
                 ]
               },
-              // Better configuration for larger files
               channelConfig: {},
               offerOptions: {},
               answerOptions: {},
@@ -496,7 +488,6 @@ export default function RoomPage() {
           viewedBy: [],
           selfDestruct: attachment.selfDestruct,
           downloadable: attachment.downloadable,
-          // Start timer immediately for non-view-once self-destruct images
           timerStartedAt: (attachment.selfDestruct && !attachment.viewOnce) ? Date.now() : undefined,
         };
 
