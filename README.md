@@ -53,6 +53,7 @@ Open http://localhost:3000
 
 ### Storage Options
 - **24H** - Default, messages expire in 24 hours
+- **7D** - Extended mode, messages expire in 7 days
 ## Tech
 
 - Next.js 16

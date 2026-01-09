@@ -36,7 +36,7 @@ export interface UserPreferences {
 const STORAGE_KEY_PREFIX = 'room_';
 const USER_PREFS_KEY = 'user_prefs';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-const SEVEN_WEEKS_MS = 7 * 7 * ONE_DAY_MS;
+const SEVEN_DAYS_MS = 7 * ONE_DAY_MS;
 
 export const getUserPreferences = (): UserPreferences => {
   const stored = localStorage.getItem(USER_PREFS_KEY);
@@ -52,7 +52,7 @@ export const saveUserPreferences = (prefs: UserPreferences): void => {
 
 export const saveRoomData = (roomCode: string, messages: Message[], extendedRetention = false): void => {
   const now = Date.now();
-  const retention = extendedRetention ? SEVEN_WEEKS_MS : ONE_DAY_MS;
+  const retention = extendedRetention ? SEVEN_DAYS_MS : ONE_DAY_MS;
   
   const existingData = loadRoomData(roomCode);
   const originalCreatedAt = existingData?.createdAt || now;

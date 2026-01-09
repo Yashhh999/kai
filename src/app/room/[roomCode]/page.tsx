@@ -7,6 +7,7 @@ import Peer from 'simple-peer';
 import ChatMessages from '@/components/ChatMessages';
 import ChatInput from '@/components/ChatInput';
 import RoomHeader from '@/components/RoomHeader';
+import VoiceChannel, { VoiceChannelRef } from '@/components/VoiceChannel';
 import { deriveKey, encryptMessage, decryptMessage } from '@/lib/encryption';
 import { saveRoomData, loadRoomData, Message, getUserPreferences, saveUserPreferences } from '@/lib/storage';
 import { prepareFile, isFileTooLarge } from '@/lib/fileUtils';
@@ -36,7 +37,10 @@ export default function RoomPage() {
   const [transferMode, setTransferMode] = useState<'p2p' | 'direct' | null>(null);
   const [isReceiving, setIsReceiving] = useState(false);
   const [hasLoadedFromStorage, setHasLoadedFromStorage] = useState(false);
+  const [isInVoice, setIsInVoice] = useState(false);
+  const [voiceParticipantCount, setVoiceParticipantCount] = useState(0);
   const peersRef = useRef<Map<string, Peer.Instance>>(new Map());
+  const voiceChannelRef = useRef<VoiceChannelRef>(null);
 
   useEffect(() => {
     if (!roomCode) {
@@ -62,7 +66,17 @@ export default function RoomPage() {
 
     deriveKey(roomCode).then(setEncryptionKey);
 
-    const socketInstance = io(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000', {
+    const getSocketUrl = () => {
+      if (process.env.NEXT_PUBLIC_API_URL) {
+        return process.env.NEXT_PUBLIC_API_URL;
+      }
+      if (typeof window !== 'undefined') {
+        return window.location.origin;
+      }
+      return 'http://localhost:3000';
+    };
+
+    const socketInstance = io(getSocketUrl(), {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 5,
@@ -201,7 +215,6 @@ export default function RoomPage() {
           viewedBy: [],
           selfDestruct: fileData.selfDestruct,
           downloadable: fileData.downloadable,
-          // Start timer immediately for non-view-once self-destruct images
           timerStartedAt: (fileData.selfDestruct && !fileData.viewOnce) ? Date.now() : undefined,
         };
 
@@ -231,14 +244,13 @@ export default function RoomPage() {
     const handleP2PRequest = ({ from }: any) => {
       const peer = new Peer({ 
         initiator: false, 
-        trickle: true, // Enable trickle ICE for better connection
+        trickle: true,
         config: {
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:global.stun.twilio.com:3478' }
           ]
         },
-        // Larger chunk size , for better performance optimization
         channelConfig: {},
         offerOptions: {},
         answerOptions: {},
@@ -293,7 +305,6 @@ export default function RoomPage() {
             viewedBy: [],
             selfDestruct: fileData.selfDestruct,
             downloadable: fileData.downloadable,
-            // Start timer immediately for non-view-once self-destruct images
             timerStartedAt: (fileData.selfDestruct && !fileData.viewOnce) ? Date.now() : undefined,
           };
 
@@ -386,14 +397,13 @@ export default function RoomPage() {
           for (const user of targetUsers) {
             const peer = new Peer({ 
               initiator: true, 
-              trickle: true, // Enable trickle ICE for better connection
+              trickle: true,
               config: {
                 iceServers: [
                   { urls: 'stun:stun.l.google.com:19302' },
                   { urls: 'stun:global.stun.twilio.com:3478' }
                 ]
               },
-              // Better configuration for larger files
               channelConfig: {},
               offerOptions: {},
               answerOptions: {},
@@ -478,7 +488,6 @@ export default function RoomPage() {
           viewedBy: [],
           selfDestruct: attachment.selfDestruct,
           downloadable: attachment.downloadable,
-          // Start timer immediately for non-view-once self-destruct images
           timerStartedAt: (attachment.selfDestruct && !attachment.viewOnce) ? Date.now() : undefined,
         };
 
@@ -571,14 +580,31 @@ export default function RoomPage() {
     return users.filter((u: RoomUser) => now - u.lastSeen < 60000);
   }, [users]);
 
+  const handleVoiceStateChange = useCallback((inVoice: boolean, participantCount: number) => {
+    setIsInVoice(inVoice);
+    setVoiceParticipantCount(participantCount);
+  }, []);
+
   return (
     <>
+      <VoiceChannel
+        ref={voiceChannelRef}
+        roomCode={roomCode}
+        socket={socket}
+        currentUserId={socket?.id || ''}
+        currentUsername={username}
+        isConnected={isConnected}
+        onVoiceStateChange={handleVoiceStateChange}
+      />
       <div className="flex flex-col h-screen bg-black">
         <RoomHeader 
           roomCode={roomCode} 
           users={onlineUsers}
           extendedRetention={extendedRetention}
           onToggleRetention={toggleRetention}
+          voiceChannelRef={voiceChannelRef}
+          isInVoice={isInVoice}
+          voiceParticipantCount={voiceParticipantCount}
         />
       <ChatMessages 
         messages={messages} 

@@ -37,7 +37,7 @@
 
 ### Storage Options
 - **24-Hour Mode** - Default retention period
-- **7-Week Mode** - Extended storage for long-term chats
+- **7-Day Mode** - Extended storage for longer-term chats
 - **Per-Room Setting** - Toggle retention per conversation
 - **Auto-Cleanup** - Expired messages automatically removed
 
