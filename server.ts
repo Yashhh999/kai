@@ -21,6 +21,15 @@ interface TypingUser {
   timeout: NodeJS.Timeout;
 }
 
+interface VoiceParticipant {
+  userId: string;
+  username: string;
+  isMuted: boolean;
+  isDeafened: boolean;
+  joinedAt: number;
+  lastActivity: number;
+}
+
 interface Room {
   users: Map<string, RoomUser>;
   createdAt: number;
@@ -31,6 +40,7 @@ interface Room {
     timestamp: number;
   }>;
   typingUsers: Map<string, TypingUser>;
+  voiceChannel: Map<string, VoiceParticipant>;
 }
 
 const rooms = new Map<string, Room>();
@@ -58,11 +68,25 @@ const checkRateLimit = (socketId: string): boolean => {
   return true;
 };
 
-const cleanupRooms = () => {
+const cleanupRooms = (io?: any) => {
   const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+  const threeMinutesAgo = Date.now() - 3 * 60 * 1000;
+  
   for (const [roomId, data] of rooms.entries()) {
     if (data.createdAt < oneDayAgo) {
       rooms.delete(roomId);
+      continue;
+    }
+    
+    if (io) {
+      for (const [userId, participant] of data.voiceChannel.entries()) {
+        if (participant.lastActivity < threeMinutesAgo) {
+          data.voiceChannel.delete(userId);
+          const participants = Array.from(data.voiceChannel.values());
+          io.to(roomId).emit('voice-state-update', participants);
+          io.to(userId).emit('voice-kicked-afk');
+        }
+      }
     }
   }
   
@@ -90,12 +114,14 @@ app.prepare().then(() => {
       origin: '*',
       methods: ['GET', 'POST'],
     },
-    maxHttpBufferSize: 100 * 1024 * 1024, // 100MB for larger files
+    maxHttpBufferSize: 100 * 1024 * 1024,
     pingTimeout: 60000,
     pingInterval: 25000,
     connectTimeout: 45000,
     transports: ['websocket', 'polling'],
   });
+
+  setInterval(() => cleanupRooms(io), 60 * 1000);
 
   io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
@@ -119,6 +145,7 @@ app.prepare().then(() => {
           createdAt: Date.now(),
           messageHistory: [],
           typingUsers: new Map(),
+          voiceChannel: new Map(),
         });
       } else {
         const room = rooms.get(roomId)!;
@@ -147,14 +174,93 @@ app.prepare().then(() => {
       const room = rooms.get(roomId);
       if (room) {
         room.users.delete(socket.id);
+        room.voiceChannel.delete(socket.id);
+        
         if (room.users.size === 0) {
           rooms.delete(roomId);
         } else {
           const usersList = Array.from(room.users.values());
           io.to(roomId).emit('users-update', usersList);
+          
+          const participants = Array.from(room.voiceChannel.values());
+          io.to(roomId).emit('voice-state-update', participants);
         }
       }
       socket.to(roomId).emit('user-left', socket.id);
+    });
+
+    socket.on('voice-join', ({ roomId }: { roomId: string }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      const user = room.users.get(socket.id);
+      if (!user) return;
+
+      // Don't add if already in voice channel
+      if (room.voiceChannel.has(socket.id)) {
+        console.log(`User ${socket.id} already in voice channel`);
+        return;
+      }
+
+      room.voiceChannel.set(socket.id, {
+        userId: socket.id,
+        username: user.name,
+        isMuted: false,
+        isDeafened: false,
+        joinedAt: Date.now(),
+        lastActivity: Date.now()
+      });
+
+      const participants = Array.from(room.voiceChannel.values());
+      console.log(`User ${user.name} joined voice. Total participants:`, participants.length);
+      
+      // Broadcast to all users including the joiner
+      io.to(roomId).emit('voice-state-update', participants);
+    });
+
+    socket.on('voice-leave', ({ roomId }: { roomId: string }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      room.voiceChannel.delete(socket.id);
+      const participants = Array.from(room.voiceChannel.values());
+      io.to(roomId).emit('voice-state-update', participants);
+    });
+
+    socket.on('voice-toggle-mute', ({ roomId }: { roomId: string }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+      
+      const participant = room.voiceChannel.get(socket.id);
+      if (!participant) return;
+
+      participant.isMuted = !participant.isMuted;
+      participant.lastActivity = Date.now();
+      
+      const participants = Array.from(room.voiceChannel.values());
+      io.to(roomId).emit('voice-state-update', participants);
+    });
+
+    socket.on('voice-toggle-deafen', ({ roomId }: { roomId: string }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+      
+      const participant = room.voiceChannel.get(socket.id);
+      if (!participant) return;
+
+      participant.isDeafened = !participant.isDeafened;
+      if (participant.isDeafened) participant.isMuted = true;
+      participant.lastActivity = Date.now();
+      
+      const participants = Array.from(room.voiceChannel.values());
+      io.to(roomId).emit('voice-state-update', participants);
+    });
+
+    socket.on('voice-signal', ({ roomId, targetId, signal }: { roomId: string; targetId: string; signal: any }) => {
+      io.to(targetId).emit('voice-signal', {
+        from: socket.id,
+        signal
+      });
     });
 
     socket.on('typing-start', ({ roomId, username }: { roomId: string; username: string }) => {

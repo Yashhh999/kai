@@ -2,7 +2,8 @@
 
 import { formatRoomCode } from '@/lib/roomCode';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, RefObject } from 'react';
+import { VoiceChannelRef } from './VoiceChannel';
 
 interface RoomUser {
   id: string;
@@ -15,9 +16,12 @@ interface RoomHeaderProps {
   users: RoomUser[];
   extendedRetention: boolean;
   onToggleRetention: () => void;
+  voiceChannelRef: RefObject<VoiceChannelRef | null>;
+  isInVoice: boolean;
+  voiceParticipantCount: number;
 }
 
-export default function RoomHeader({ roomCode, users, extendedRetention, onToggleRetention }: RoomHeaderProps) {
+export default function RoomHeader({ roomCode, users, extendedRetention, onToggleRetention, voiceChannelRef, isInVoice, voiceParticipantCount }: RoomHeaderProps) {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
@@ -89,22 +93,57 @@ export default function RoomHeader({ roomCode, users, extendedRetention, onToggl
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2 ml-3">
+        <div className="flex items-center gap-1.5 sm:gap-2 ml-2 sm:ml-3">
+          <button
+            onClick={() => voiceChannelRef.current?.toggle()}
+            className={`relative px-2.5 sm:px-3 py-1.5 rounded-lg border transition-all duration-200 ${
+              isInVoice
+                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-lg shadow-emerald-500/20'
+                : voiceParticipantCount > 0
+                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/20'
+                  : 'bg-neutral-900/50 border-neutral-800/50 text-neutral-500 hover:text-neutral-300 hover:border-neutral-700'
+            }`}
+            title={
+              isInVoice 
+                ? 'You are in voice' 
+                : voiceParticipantCount > 0
+                  ? `${voiceParticipantCount} user(s) in voice - Click to view`
+                  : 'Voice Channel - Click to open'
+            }
+          >
+            {/* Green indicator dot when anyone is in voice but you're not */}
+            {voiceParticipantCount > 0 && !isInVoice && (
+              <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-black shadow-lg shadow-emerald-500/50 animate-pulse"></div>
+            )}
+            {/* Solid green ring when you're in voice */}
+            {isInVoice && (
+              <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-black shadow-lg"></div>
+            )}
+            <div className="flex items-center gap-1.5">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+              </svg>
+              {voiceParticipantCount > 0 && (
+                <span className="text-xs font-bold">{voiceParticipantCount}</span>
+              )}
+            </div>
+          </button>
+          
           <button
             onClick={onToggleRetention}
-            className={`text-xs px-3 py-1.5 rounded-full border transition-all duration-200 font-medium ${
+            className={`text-xs px-2.5 sm:px-3 py-1.5 rounded-full border transition-all duration-200 font-medium ${
               extendedRetention
                 ? 'bg-blue-500/20 border-blue-500/40 text-blue-400 shadow-lg shadow-blue-500/20'
                 : 'bg-neutral-900/50 border-neutral-800/50 text-neutral-500 hover:text-neutral-300 hover:border-neutral-700'
             }`}
-            title={extendedRetention ? '7 weeks retention' : '24 hours retention'}
+            title={extendedRetention ? '7 days retention' : '24 hours retention'}
           >
-            {extendedRetention ? '7W' : '24H'}
+            {extendedRetention ? '7D' : '24H'}
           </button>
           
           <button
             onClick={() => router.push('/')}
-            className="px-3 sm:px-4 py-1.5 text-xs sm:text-sm text-neutral-500 hover:text-white border border-neutral-800/50 rounded-lg hover:border-neutral-700 hover:bg-neutral-900/50 transition-all duration-200"
+            className="px-2.5 sm:px-4 py-1.5 text-xs sm:text-sm text-neutral-500 hover:text-white border border-neutral-800/50 rounded-lg hover:border-neutral-700 hover:bg-neutral-900/50 transition-all duration-200"
           >
             Leave
           </button>

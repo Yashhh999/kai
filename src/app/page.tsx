@@ -150,7 +150,7 @@ export default function Home() {
               <div className="flex items-center justify-between pt-4 border-t border-neutral-800">
                 <div>
                   <div className="text-sm text-neutral-300 font-medium">Extended Retention</div>
-                  <div className="text-xs text-neutral-600">7 weeks instead of 24 hours</div>
+                  <div className="text-xs text-neutral-600">7 days instead of 24 hours</div>
                 </div>
                 <button
                   onClick={() => setExtendedRetention(!extendedRetention)}

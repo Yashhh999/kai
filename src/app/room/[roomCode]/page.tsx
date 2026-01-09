@@ -7,6 +7,7 @@ import Peer from 'simple-peer';
 import ChatMessages from '@/components/ChatMessages';
 import ChatInput from '@/components/ChatInput';
 import RoomHeader from '@/components/RoomHeader';
+import VoiceChannel, { VoiceChannelRef } from '@/components/VoiceChannel';
 import { deriveKey, encryptMessage, decryptMessage } from '@/lib/encryption';
 import { saveRoomData, loadRoomData, Message, getUserPreferences, saveUserPreferences } from '@/lib/storage';
 import { prepareFile, isFileTooLarge } from '@/lib/fileUtils';
@@ -36,7 +37,10 @@ export default function RoomPage() {
   const [transferMode, setTransferMode] = useState<'p2p' | 'direct' | null>(null);
   const [isReceiving, setIsReceiving] = useState(false);
   const [hasLoadedFromStorage, setHasLoadedFromStorage] = useState(false);
+  const [isInVoice, setIsInVoice] = useState(false);
+  const [voiceParticipantCount, setVoiceParticipantCount] = useState(0);
   const peersRef = useRef<Map<string, Peer.Instance>>(new Map());
+  const voiceChannelRef = useRef<VoiceChannelRef>(null);
 
   useEffect(() => {
     if (!roomCode) {
@@ -571,14 +575,31 @@ export default function RoomPage() {
     return users.filter((u: RoomUser) => now - u.lastSeen < 60000);
   }, [users]);
 
+  const handleVoiceStateChange = useCallback((inVoice: boolean, participantCount: number) => {
+    setIsInVoice(inVoice);
+    setVoiceParticipantCount(participantCount);
+  }, []);
+
   return (
     <>
+      <VoiceChannel
+        ref={voiceChannelRef}
+        roomCode={roomCode}
+        socket={socket}
+        currentUserId={socket?.id || ''}
+        currentUsername={username}
+        isConnected={isConnected}
+        onVoiceStateChange={handleVoiceStateChange}
+      />
       <div className="flex flex-col h-screen bg-black">
         <RoomHeader 
           roomCode={roomCode} 
           users={onlineUsers}
           extendedRetention={extendedRetention}
           onToggleRetention={toggleRetention}
+          voiceChannelRef={voiceChannelRef}
+          isInVoice={isInVoice}
+          voiceParticipantCount={voiceParticipantCount}
         />
       <ChatMessages 
         messages={messages} 
