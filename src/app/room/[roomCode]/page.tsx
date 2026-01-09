@@ -66,7 +66,21 @@ export default function RoomPage() {
 
     deriveKey(roomCode).then(setEncryptionKey);
 
-    const socketInstance = io(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000', {
+    // Determine socket URL - use current origin for production/mobile, or env var for development
+    const getSocketUrl = () => {
+      // If we have an explicit API URL set, use it
+      if (process.env.NEXT_PUBLIC_API_URL) {
+        return process.env.NEXT_PUBLIC_API_URL;
+      }
+      // In browser, use the current origin (works for both desktop and mobile)
+      if (typeof window !== 'undefined') {
+        return window.location.origin;
+      }
+      // Fallback for SSR
+      return 'http://localhost:3000';
+    };
+
+    const socketInstance = io(getSocketUrl(), {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 5,
