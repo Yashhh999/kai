@@ -55,6 +55,12 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
   const panelRef = useRef<HTMLDivElement>(null);
   const connectionAttempts = useRef<Map<string, number>>(new Map());
   const isJoiningRef = useRef(false);
+  const inVoiceRef = useRef(false); // Ref to track voice state immediately
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    inVoiceRef.current = inVoice;
+  }, [inVoice]);
 
   // Expose methods to parent component
   useImperativeHandle(ref, () => ({
@@ -94,10 +100,10 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
     return () => clearInterval(interval);
   }, [channelStartTime]);
 
-  // Cleanup on unmount or disconnect
+  // Cleanup on unmount ONLY (not on dependency changes)
   useEffect(() => {
     const cleanup = () => {
-      console.log('[Voice] Cleanup triggered');
+      console.log('[Voice] Unmount cleanup triggered');
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
         localStreamRef.current = null;
@@ -113,17 +119,27 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
       connectionAttempts.current.clear();
     };
 
+    const handleBeforeUnload = () => {
+      if (inVoiceRef.current) {
+        // Can't reliably emit in beforeunload, but try anyway
+        cleanup();
+      }
+    };
+
     // Cleanup on page unload
-    window.addEventListener('beforeunload', cleanup);
+    window.addEventListener('beforeunload', handleBeforeUnload);
     
     return () => {
-      window.removeEventListener('beforeunload', cleanup);
-      if (inVoice) {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      // Only emit voice-leave if we're actually in voice when unmounting
+      if (inVoiceRef.current) {
         socket?.emit('voice-leave', { roomId: roomCode });
       }
       cleanup();
     };
-  }, [inVoice, socket, roomCode]);
+    // Empty dependency array - only run on mount/unmount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Socket event handlers
   useEffect(() => {
@@ -131,6 +147,7 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
 
     const handleVoiceStateUpdate = (updatedParticipants: VoiceParticipant[]) => {
       console.log('[Voice] State update:', updatedParticipants.length, 'participants', updatedParticipants.map(p => p.username));
+      console.log('[Voice] inVoiceRef:', inVoiceRef.current, 'isJoiningRef:', isJoiningRef.current, 'localStream:', !!localStreamRef.current);
       setParticipants(updatedParticipants);
 
       // Set channel start time
@@ -143,14 +160,17 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
 
       // Check if we were kicked (our userId no longer in participants but we think we're in voice)
       const meInParticipants = updatedParticipants.some(p => p.userId === currentUserId);
-      if (inVoice && !meInParticipants && !isJoiningRef.current) {
+      if (inVoiceRef.current && !meInParticipants && !isJoiningRef.current) {
         console.log('[Voice] We were removed from voice channel');
         cleanupVoice();
         return;
       }
 
-      // Only process peer connections if we're in voice
-      if (!inVoice || !localStreamRef.current) return;
+      // Only process peer connections if we're in voice (use ref for immediate state)
+      if (!inVoiceRef.current || !localStreamRef.current) {
+        console.log('[Voice] Not in voice or no local stream, skipping peer creation');
+        return;
+      }
 
       const otherParticipants = updatedParticipants.filter(p => p.userId !== currentUserId);
       const currentParticipantIds = new Set(otherParticipants.map(p => p.userId));
@@ -180,8 +200,10 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
           setConnectionStatus(prev => new Map(prev).set(participant.userId, 'connecting'));
           
           setTimeout(() => {
-            if (inVoice && localStreamRef.current && !peersRef.current.has(participant.userId)) {
+            if (inVoiceRef.current && localStreamRef.current && !peersRef.current.has(participant.userId)) {
               createPeerConnection(participant.userId, shouldInitiate);
+            } else {
+              console.log(`[Voice] Skipped creating peer for ${participant.username}: inVoice=${inVoiceRef.current}, stream=${!!localStreamRef.current}, exists=${peersRef.current.has(participant.userId)}`);
             }
           }, shouldInitiate ? 100 : 500);
         }
@@ -193,8 +215,8 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
       
       console.log(`[Voice] Signal from ${from}:`, signal.type || 'candidate');
 
-      // If we're not in voice, ignore signals
-      if (!inVoice && !isJoiningRef.current) {
+      // If we're not in voice, ignore signals (use ref for immediate state)
+      if (!inVoiceRef.current && !isJoiningRef.current) {
         console.log('[Voice] Not in voice, ignoring signal');
         return;
       }
@@ -332,6 +354,7 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
     });
     remoteAudiosRef.current.clear();
 
+    inVoiceRef.current = false;
     setInVoice(false);
     setIsMuted(false);
     setIsDeafened(false);
@@ -357,6 +380,14 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+        // Free TURN servers from Open Relay Project
+        {
+          urls: 'turn:relay1.expressturn.com:3478',
+          username: 'efWXHN45WUJVS85RZH',
+          credential: 'N8SxmFVCQZ46mQVg'
+        },
+        // Fallback TURN servers
         {
           urls: 'turn:openrelay.metered.ca:80',
           username: 'openrelayproject',
@@ -375,7 +406,8 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
       ],
       iceCandidatePoolSize: 10,
       bundlePolicy: 'max-bundle',
-      rtcpMuxPolicy: 'require'
+      rtcpMuxPolicy: 'require',
+      iceTransportPolicy: 'all'
     });
 
     // Add local tracks FIRST before creating offer
@@ -454,20 +486,36 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
         connectionAttempts.current.set(odId, 0);
       } else if (pc.connectionState === 'failed') {
         const attempts = connectionAttempts.current.get(odId) || 0;
-        if (attempts < 2) {
-          console.log(`[Voice] Retrying connection to ${odId}`);
+        if (attempts < 3) {
+          console.log(`[Voice] Retrying connection to ${odId}, attempt ${attempts + 1}`);
           connectionAttempts.current.set(odId, attempts + 1);
           
-          // Recreate the connection
-          setTimeout(() => {
-            if (peersRef.current.has(odId)) {
-              peersRef.current.get(odId)?.close();
-              peersRef.current.delete(odId);
-            }
-            if (inVoice && localStreamRef.current) {
-              createPeerConnection(odId, true);
-            }
-          }, 1000);
+          // Try ICE restart first
+          if (attempts === 0 && pc.restartIce) {
+            console.log(`[Voice] Attempting ICE restart for ${odId}`);
+            pc.restartIce();
+            pc.createOffer({ iceRestart: true })
+              .then(offer => pc.setLocalDescription(offer))
+              .then(() => {
+                socket?.emit('voice-signal', { 
+                  roomId: roomCode, 
+                  targetId: odId, 
+                  signal: pc.localDescription 
+                });
+              })
+              .catch(err => console.error('[Voice] ICE restart error:', err));
+          } else {
+            // Recreate the connection
+            setTimeout(() => {
+              if (peersRef.current.has(odId)) {
+                peersRef.current.get(odId)?.close();
+                peersRef.current.delete(odId);
+              }
+              if (localStreamRef.current) {
+                createPeerConnection(odId, true);
+              }
+            }, 1000 * (attempts + 1));
+          }
         } else {
           setConnectionStatus(prev => new Map(prev).set(odId, 'failed'));
         }
@@ -479,38 +527,46 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
       
       if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
         setConnectionStatus(prev => new Map(prev).set(odId, 'connected'));
+      } else if (pc.iceConnectionState === 'checking') {
+        setConnectionStatus(prev => new Map(prev).set(odId, 'connecting'));
       } else if (pc.iceConnectionState === 'disconnected') {
+        // Give it time to recover before showing as reconnecting
         setTimeout(() => {
           if (pc.iceConnectionState === 'disconnected') {
             setConnectionStatus(prev => new Map(prev).set(odId, 'connecting'));
           }
-        }, 3000);
+        }, 2000);
+      } else if (pc.iceConnectionState === 'failed') {
+        // Trigger connection state change handler
+        console.log(`[Voice] ICE failed for ${odId}, will trigger retry`);
       }
     };
 
     peersRef.current.set(odId, pc);
 
-    // Create offer if initiator
+    // Create offer if initiator - wait a short moment to ensure tracks are added
     if (isInitiator) {
-      console.log(`[Voice] Creating offer for ${odId}`);
-      pc.createOffer({ offerToReceiveAudio: true })
-        .then(offer => {
-          console.log(`[Voice] Setting local description for ${odId}`);
-          return pc.setLocalDescription(offer);
-        })
-        .then(() => {
-          console.log(`[Voice] Sending offer to ${odId}`);
-          socket?.emit('voice-signal', { 
-            roomId: roomCode, 
-            targetId: odId, 
-            signal: pc.localDescription 
-          });
-        })
-        .catch(err => console.error('[Voice] Offer error:', err));
+      setTimeout(() => {
+        console.log(`[Voice] Creating offer for ${odId}`);
+        pc.createOffer({ offerToReceiveAudio: true })
+          .then(offer => {
+            console.log(`[Voice] Setting local description for ${odId}`);
+            return pc.setLocalDescription(offer);
+          })
+          .then(() => {
+            console.log(`[Voice] Sending offer to ${odId}`);
+            socket?.emit('voice-signal', { 
+              roomId: roomCode, 
+              targetId: odId, 
+              signal: pc.localDescription 
+            });
+          })
+          .catch(err => console.error('[Voice] Offer error:', err));
+      }, 50); // Small delay to ensure tracks are ready
     }
 
     return pc;
-  }, [socket, roomCode, isDeafened, inVoice]);
+  }, [socket, roomCode, isDeafened]);
 
   const joinVoice = async () => {
     if (inVoice || isJoiningRef.current) return;
@@ -542,6 +598,9 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
       console.log('[Voice] Audio track settings:', audioTrack.getSettings());
       
       localStreamRef.current = stream;
+      
+      // Set the ref BEFORE the state to ensure handlers see it immediately
+      inVoiceRef.current = true;
       setInVoice(true);
       setIsMuted(false);
       setIsDeafened(false);
@@ -553,6 +612,7 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
     } catch (error: unknown) {
       console.error('[Voice] Microphone error:', error);
       isJoiningRef.current = false;
+      inVoiceRef.current = false;
       
       if (error instanceof Error) {
         if (error.name === 'NotAllowedError') {

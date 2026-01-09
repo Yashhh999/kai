@@ -3,8 +3,7 @@
 import { formatRoomCode } from '@/lib/roomCode';
 import { useRouter } from 'next/navigation';
 import { useState, RefObject } from 'react';
-import { VoiceChannelRef } from './VoiceChannel';
-
+import { VoiceChannelRef } from '@/components/VoiceChannel';
 interface RoomUser {
   id: string;
   name: string;
