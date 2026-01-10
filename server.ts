@@ -78,9 +78,12 @@ const cleanupRooms = (io?: any) => {
       continue;
     }
     
-    if (io) {
+    // Only check for AFK if there's exactly 1 person in voice (alone)
+    // If 2+ people are in voice, they're actively in a call - don't kick anyone
+    if (io && data.voiceChannel.size === 1) {
       for (const [userId, participant] of data.voiceChannel.entries()) {
         if (participant.lastActivity < threeMinutesAgo) {
+          console.log(`[Voice] Kicking ${participant.username} for AFK (alone in voice for 3+ mins)`);
           data.voiceChannel.delete(userId);
           const participants = Array.from(data.voiceChannel.values());
           io.to(roomId).emit('voice-state-update', participants);
