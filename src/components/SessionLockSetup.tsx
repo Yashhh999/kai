@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { Lock, X } from 'lucide-react';
+import { getKeyManager } from '@/lib/crypto/keyManager';
 
 interface SessionLockSetupProps {
   onComplete: (pin: string) => void;
@@ -13,6 +14,7 @@ export default function SessionLockSetup({ onComplete, onCancel }: SessionLockSe
   const [confirmPin, setConfirmPin] = useState(['', '', '', '']);
   const [step, setStep] = useState<'create' | 'confirm'>('create');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const confirmRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -56,16 +58,30 @@ export default function SessionLockSetup({ onComplete, onCancel }: SessionLockSe
     }
   };
 
-  const verifyPins = (originalPin: string, confirmed: string) => {
-    if (originalPin === confirmed) {
-      localStorage.setItem('session_pin', originalPin);
-      onComplete(originalPin);
-    } else {
+  const verifyPins = async (originalPin: string, confirmed: string) => {
+    if (originalPin !== confirmed) {
       setError('PINs do not match. Try again.');
       setPin(['', '', '', '']);
       setConfirmPin(['', '', '', '']);
       setStep('create');
       setTimeout(() => inputRefs.current[0]?.focus(), 100);
+      return;
+    }
+    // Generate the cryptographic identity and seal it under an Argon2id(PIN) key.
+    // No plaintext PIN is ever stored.
+    setSubmitting(true);
+    setError('');
+    try {
+      await getKeyManager().createWithPin(originalPin);
+      onComplete(originalPin);
+    } catch (e) {
+      console.error('Identity setup failed:', e);
+      setError('Could not create your identity. Please try again.');
+      setPin(['', '', '', '']);
+      setConfirmPin(['', '', '', '']);
+      setStep('create');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -85,9 +101,13 @@ export default function SessionLockSetup({ onComplete, onCancel }: SessionLockSe
               <Lock className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white">Setup Session Lock</h2>
+              <h2 className="text-xl font-bold text-white">Protect your identity</h2>
               <p className="text-neutral-400 text-sm">
-                {step === 'create' ? 'Create a 4-digit PIN' : 'Confirm your PIN'}
+                {submitting
+                  ? 'Creating your encrypted identity…'
+                  : step === 'create'
+                    ? 'Create a 4-digit PIN'
+                    : 'Confirm your PIN'}
               </p>
             </div>
           </div>
@@ -163,8 +183,9 @@ export default function SessionLockSetup({ onComplete, onCancel }: SessionLockSe
 
         <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
           <p className="text-blue-400 text-xs leading-relaxed">
-            <strong>Note:</strong> Your PIN is stored locally in your browser. 
-            If you forget it, you'll need to clear your browser data to reset it.
+            <strong>Note:</strong> Your PIN encrypts your identity keys on this device.
+            It is never stored in plaintext and never leaves your browser. If you forget
+            it, your keys can't be recovered — you'll need to create a new identity.
           </p>
         </div>
       </div>

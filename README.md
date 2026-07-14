@@ -78,10 +78,23 @@ Open http://localhost:3000
 
 ## Security
 
-- Client-side encryption
-- PBKDF2 key derivation
-- Zero server storage
-- Cryptographic random codes
+Kai aims for Signal-grade security for ephemeral/group use while keeping a
+zero-durable-storage server. Highlights:
+
+- **Server can route but never decrypt** — the room code derives a one-way server
+  `routingId` and a client-only room key on **separate HKDF branches**, so the raw
+  code and keys never reach the server.
+- **Argon2id + HKDF** key hierarchy (replaces the old static-salt PBKDF2).
+- **Cryptographic identities** (X25519 + Ed25519); your User ID is your key fingerprint.
+- **Forward secrecy** — Double Ratchet for 1:1 DMs, sender-keys with epoch rekey for rooms.
+- **Safety numbers / QR** for out-of-band MITM detection.
+- **Secure invites** (fragment-based, never sent to the server; expiry / max-uses /
+  one-time / password / max-participants).
+- **AES-256-GCM** for messages, files (direct **and** P2P), and voice; identity keys
+  sealed at rest under an Argon2id(PIN) key (no plaintext PIN).
+
+See **[SECURITY.md](SECURITY.md)** and **[THREAT-MODEL.md](THREAT-MODEL.md)** — including
+the honest limits of any browser-delivered crypto app.
 
 ## License
 

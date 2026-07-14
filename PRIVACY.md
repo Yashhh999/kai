@@ -4,22 +4,30 @@ Last updated: December 13, 2025
 
 ## Data Collection
 
-We collect ZERO data. Seriously.
+We collect **zero durable data** — nothing is ever written to a database, disk, or log.
 
-- No server storage
+- No database / disk persistence
 - No analytics
 - No tracking
 - No cookies
-- No accounts
-- No logs
+- No accounts (only a local cryptographic identity you generate on your device)
+
+**Honest nuance:** to relay messages between people in a room, the server keeps a
+small amount of state **in memory only** (wiped on restart): who is currently
+connected, and — for legacy rooms — a short buffer of *encrypted* messages for
+replay. It never holds any key or plaintext, and forward-secret (v2) rooms are not
+buffered at all. The server does observe **metadata**: which routing id you connect
+to, your public-key fingerprint, and message timing/sizes.
 
 ## What Happens to Your Messages
 
 Your messages are:
-- Encrypted on your device
-- Stored in YOUR browser only
-- Never sent to our servers in readable form
-- Automatically deleted after expiration
+- Encrypted on your device before they leave your browser
+- Never sent to our servers in readable form (the server cannot derive your keys)
+- Stored (decrypted) only in YOUR browser's local storage, sealed at rest
+- Automatically deleted after expiration (24 hours, or 7 days if you opt in)
+
+See [SECURITY.md](SECURITY.md) and [THREAT-MODEL.md](THREAT-MODEL.md) for the full model.
 
 ## Third Parties
 

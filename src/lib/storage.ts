@@ -117,6 +117,28 @@ export const saveRoomData = (roomCode: string, messages: Message[], extendedRete
   }
 };
 
+/**
+ * Move a legacy room-code-keyed cache to the new routingId key. Messages are stored
+ * decrypted (plaintext) locally, so this is a pure re-key with no re-encryption.
+ */
+export const migrateLegacyRoom = async (roomCode: string, routingId: string): Promise<void> => {
+  try {
+    if (!roomCode || !routingId || roomCode === routingId) return;
+    const legacyKey = `${STORAGE_KEY_PREFIX}${roomCode}`;
+    const legacy = localStorage.getItem(legacyKey);
+    if (!legacy) return;
+    const newKey = `${STORAGE_KEY_PREFIX}${routingId}`;
+    if (!localStorage.getItem(newKey)) {
+      const parsed: RoomStorage = JSON.parse(legacy);
+      parsed.roomCode = routingId;
+      localStorage.setItem(newKey, JSON.stringify(parsed));
+    }
+    localStorage.removeItem(legacyKey);
+  } catch (error) {
+    console.error('Legacy room migration failed:', error);
+  }
+};
+
 export const deleteRoomData = (roomCode: string): void => {
   try {
     localStorage.removeItem(`${STORAGE_KEY_PREFIX}${roomCode}`);

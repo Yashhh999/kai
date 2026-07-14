@@ -1,12 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { generateRoomCode, isValidRoomCode, formatRoomCode } from '@/lib/roomCode';
 import { cleanupExpiredRooms, getAllStoredRooms, getUserPreferences, saveUserPreferences } from '@/lib/storage';
 import LegalDisclaimer from '@/components/LegalDisclaimer';
 import SessionLock from '@/components/SessionLock';
 import SessionLockSetup from '@/components/SessionLockSetup';
+import { getKeyManager } from '@/lib/crypto/keyManager';
+import { formatFingerprint } from '@/lib/crypto/identity';
+import { parseInvite, redeemInvite } from '@/lib/crypto/invite';
+import { stashInvite } from '@/lib/inviteSession';
 
 export default function Home() {
   const router = useRouter();
@@ -17,28 +21,80 @@ export default function Home() {
   const [extendedRetention, setExtendedRetention] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
-  const [showLockSetup, setShowLockSetup] = useState(false);
-  const [hasSessionPin, setHasSessionPin] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState(false);
+  const [identityReady, setIdentityReady] = useState(false);
+  const [myUserId, setMyUserId] = useState('');
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteError, setInviteError] = useState('');
+  const [invitePwFragment, setInvitePwFragment] = useState<string | null>(null);
+  const [invitePassword, setInvitePassword] = useState('');
+  const inviteHandledRef = useRef(false);
 
   useEffect(() => {
     cleanupExpiredRooms();
     setRecentRooms(getAllStoredRooms());
-    
+
     const prefs = getUserPreferences();
     setUsername(prefs.username);
     setExtendedRetention(prefs.extendedRetention);
-    
-    // Check for session PIN and auto-lock
-    const pin = localStorage.getItem('session_pin');
-    if (pin) {
-      setHasSessionPin(true);
+
+    // Identity gate: first run must create an identity (PIN-sealed); a returning
+    // user must unlock it. The identity is required before entering any room.
+    const km = getKeyManager();
+    if (!km.hasSealedStore()) {
+      setNeedsSetup(true);
+    } else if (!km.isUnlocked()) {
       setIsLocked(true);
+    } else {
+      setIdentityReady(true);
     }
-    
+
     if (!prefs.username) {
       setShowSettings(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (identityReady) {
+      try {
+        setMyUserId(getKeyManager().getPublicIdentity().fingerprint);
+      } catch {
+        /* locked */
+      }
+    }
+  }, [identityReady]);
+
+  const processInvite = async (fragment: string, password?: string) => {
+    setInviteBusy(true);
+    setInviteError('');
+    try {
+      const parsed = parseInvite(fragment);
+      if (parsed.token.pwSalt && !password) {
+        setInvitePwFragment(fragment); // ask for the password
+        setInviteBusy(false);
+        return;
+      }
+      const { roomKeyBytes, routingId, issuerFingerprint } = await redeemInvite(parsed, { password });
+      stashInvite(routingId, roomKeyBytes, issuerFingerprint);
+      history.replaceState(null, '', window.location.pathname); // scrub the secret from the URL
+      router.push(`/room/${routingId}`);
+    } catch (e) {
+      console.error('Invite redemption failed:', e);
+      setInviteError(password ? 'Wrong password or invalid invite.' : 'This invite is invalid or expired.');
+      setInviteBusy(false);
+    }
+  };
+
+  // Redeem an invite link (#i=…) once the identity is unlocked.
+  useEffect(() => {
+    if (!identityReady || inviteHandledRef.current) return;
+    const hash = typeof window !== 'undefined' ? window.location.hash : '';
+    if (hash.includes('i=')) {
+      inviteHandledRef.current = true;
+      processInvite(hash);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identityReady]);
 
   const savePreferences = () => {
     if (!username.trim()) {
@@ -51,6 +107,10 @@ export default function Home() {
   };
 
   const handleCreateRoom = () => {
+    if (!getKeyManager().isUnlocked()) {
+      setIsLocked(true);
+      return;
+    }
     if (!username.trim()) {
       setShowSettings(true);
       setError('Set your username first');
@@ -61,6 +121,10 @@ export default function Home() {
   };
 
   const handleJoinRoom = (code?: string) => {
+    if (!getKeyManager().isUnlocked()) {
+      setIsLocked(true);
+      return;
+    }
     if (!username.trim()) {
       setShowSettings(true);
       setError('Set your username first');
@@ -80,15 +144,69 @@ export default function Home() {
 
   return (
     <>
-      {isLocked && <SessionLock onUnlock={() => setIsLocked(false)} />}
-      {showLockSetup && (
-        <SessionLockSetup 
+      {needsSetup && (
+        <SessionLockSetup
           onComplete={() => {
-            setHasSessionPin(true);
-            setShowLockSetup(false);
+            setNeedsSetup(false);
+            setIdentityReady(true);
           }}
-          onCancel={() => setShowLockSetup(false)}
+          onCancel={() => { /* identity setup is mandatory */ }}
         />
+      )}
+      {isLocked && (
+        <SessionLock
+          onUnlock={() => {
+            setIsLocked(false);
+            setIdentityReady(true);
+          }}
+        />
+      )}
+      {(invitePwFragment || inviteBusy) && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center backdrop-blur-sm p-4">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <h2 className="text-lg font-bold text-white mb-1">Joining via invite</h2>
+            {inviteBusy && !invitePwFragment ? (
+              <p className="text-neutral-400 text-sm">Unlocking the room…</p>
+            ) : (
+              <>
+                <p className="text-neutral-400 text-xs mb-4">This invite is password-protected.</p>
+                <input
+                  type="password"
+                  value={invitePassword}
+                  onChange={(e) => setInvitePassword(e.target.value)}
+                  placeholder="Invite password"
+                  className="w-full bg-black/50 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:ring-2 focus:ring-white/40 mb-3"
+                  autoFocus
+                />
+                {inviteError && <p className="text-sm text-red-400 bg-red-500/10 px-3 py-2 rounded-lg mb-3">{inviteError}</p>}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => invitePwFragment && processInvite(invitePwFragment, invitePassword)}
+                    disabled={inviteBusy || !invitePassword}
+                    className="flex-1 bg-white text-black py-2.5 rounded-xl font-medium hover:bg-neutral-200 active:scale-95 transition-all text-sm disabled:opacity-50"
+                  >
+                    {inviteBusy ? 'Joining…' : 'Join'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setInvitePwFragment(null);
+                      setInviteError('');
+                      history.replaceState(null, '', window.location.pathname);
+                    }}
+                    className="px-4 py-2.5 text-neutral-400 hover:text-white border border-neutral-800 rounded-xl text-sm"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      {inviteError && !invitePwFragment && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-2 rounded-lg">
+          {inviteError}
+        </div>
       )}
       <div className="min-h-screen bg-black flex items-center justify-center p-4">
       <LegalDisclaimer />
@@ -115,37 +233,26 @@ export default function Home() {
               </div>
               <div className="space-y-3 pt-4 border-t border-neutral-800">
                 <div>
-                  <p className="text-sm font-medium text-white">Session Lock</p>
-                  <p className="text-xs text-neutral-500 mt-1">Secure your session with a 4-digit PIN</p>
+                  <p className="text-sm font-medium text-white">Your User ID</p>
+                  <p className="text-xs text-neutral-500 mt-1">
+                    Your cryptographic identity. Share it to let others verify you.
+                  </p>
                 </div>
-                {hasSessionPin ? (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setIsLocked(true)}
-                      className="flex-1 bg-white text-black py-2.5 rounded-xl font-medium hover:bg-neutral-200 active:scale-95 transition-all text-sm shadow-lg"
-                    >
-                      🔒 Lock Now
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (confirm('Remove session lock?')) {
-                          localStorage.removeItem('session_pin');
-                          setHasSessionPin(false);
-                        }
-                      }}
-                      className="px-4 py-2.5 text-red-400 hover:text-red-300 border border-red-500/30 rounded-xl text-sm hover:bg-red-500/10 transition-all"
-                    >
-                      Remove
-                    </button>
+                {myUserId && (
+                  <div className="bg-black/50 border border-neutral-800 rounded-xl px-4 py-2.5 font-mono text-xs text-emerald-300 break-all select-all">
+                    {formatFingerprint(myUserId)}
                   </div>
-                ) : (
-                  <button
-                    onClick={() => setShowLockSetup(true)}
-                    className="w-full bg-neutral-800 text-white py-2.5 rounded-xl font-medium hover:bg-neutral-700 active:scale-95 transition-all text-sm border border-neutral-700"
-                  >
-                    🔓 Setup PIN
-                  </button>
                 )}
+                <button
+                  onClick={() => {
+                    getKeyManager().lock();
+                    setIdentityReady(false);
+                    setIsLocked(true);
+                  }}
+                  className="w-full bg-white text-black py-2.5 rounded-xl font-medium hover:bg-neutral-200 active:scale-95 transition-all text-sm shadow-lg"
+                >
+                  🔒 Lock Now
+                </button>
               </div>
               <div className="flex items-center justify-between pt-4 border-t border-neutral-800">
                 <div>
@@ -225,6 +332,20 @@ export default function Home() {
                 </button>
               </div>
             </div>
+
+            <button
+              onClick={() => {
+                if (!getKeyManager().isUnlocked()) { setIsLocked(true); return; }
+                router.push('/dm');
+              }}
+              className="w-full bg-neutral-900/70 backdrop-blur-xl border border-neutral-800 rounded-2xl p-4 text-left hover:border-neutral-700 hover:bg-neutral-800/50 transition-all shadow-2xl flex items-center justify-between"
+            >
+              <div>
+                <h2 className="text-sm font-semibold text-white">Direct Messages</h2>
+                <p className="text-xs text-neutral-500 mt-0.5">1:1 chat by User ID (forward-secret)</p>
+              </div>
+              <span className="text-neutral-500">→</span>
+            </button>
 
             {recentRooms.length > 0 && (
               <div className="bg-neutral-900/70 backdrop-blur-xl border border-neutral-800 rounded-2xl p-6 space-y-4 shadow-2xl">

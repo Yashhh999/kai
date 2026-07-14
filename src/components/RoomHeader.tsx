@@ -1,6 +1,7 @@
 'use client';
 
 import { formatRoomCode } from '@/lib/roomCode';
+import { formatSafetyNumber } from '@/lib/crypto/safetyNumber';
 import { useRouter } from 'next/navigation';
 import { useState, RefObject } from 'react';
 import { VoiceChannelRef } from '@/components/VoiceChannel';
@@ -18,12 +19,17 @@ interface RoomHeaderProps {
   voiceChannelRef: RefObject<VoiceChannelRef | null>;
   isInVoice: boolean;
   voiceParticipantCount: number;
+  /** 60-digit room safety number for out-of-band verification. */
+  roomSafetyNumber?: string;
+  /** Opens the invite-creation modal. Absent for legacy rooms. */
+  onInvite?: () => void;
 }
 
-export default function RoomHeader({ roomCode, users, extendedRetention, onToggleRetention, voiceChannelRef, isInVoice, voiceParticipantCount }: RoomHeaderProps) {
+export default function RoomHeader({ roomCode, users, extendedRetention, onToggleRetention, voiceChannelRef, isInVoice, voiceParticipantCount, roomSafetyNumber, onInvite }: RoomHeaderProps) {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
+  const [showSafety, setShowSafety] = useState(false);
 
   const copyRoomCode = () => {
     navigator.clipboard.writeText(roomCode);
@@ -128,6 +134,35 @@ export default function RoomHeader({ roomCode, users, extendedRetention, onToggl
             </div>
           </button>
           
+          {roomSafetyNumber && (
+            <div className="relative">
+              <button
+                onClick={() => setShowSafety(!showSafety)}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all"
+                title="End-to-end encrypted — click to verify the room safety number"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <span className="text-xs font-medium hidden sm:inline">E2E</span>
+              </button>
+              {showSafety && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowSafety(false)}></div>
+                  <div className="absolute top-full right-0 mt-2 w-72 bg-neutral-900/95 backdrop-blur-xl border border-neutral-800 rounded-xl shadow-2xl z-50 p-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <p className="text-xs font-semibold text-emerald-400 mb-1">ROOM SAFETY NUMBER</p>
+                    <p className="text-[11px] text-neutral-500 mb-3 leading-relaxed">
+                      Compare this with others in the room (out of band) to confirm no one is intercepting. Everyone with the same room key sees the same number.
+                    </p>
+                    <div className="font-mono text-xs text-neutral-200 tracking-wide break-all bg-black/50 border border-neutral-800 rounded-lg p-3 select-all">
+                      {formatSafetyNumber(roomSafetyNumber)}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           <button
             onClick={onToggleRetention}
             className={`text-xs px-2.5 sm:px-3 py-1.5 rounded-full border transition-all duration-200 font-medium ${
@@ -140,6 +175,16 @@ export default function RoomHeader({ roomCode, users, extendedRetention, onToggl
             {extendedRetention ? '7D' : '24H'}
           </button>
           
+          {onInvite && (
+            <button
+              onClick={onInvite}
+              className="px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm text-neutral-300 hover:text-white border border-neutral-800/50 rounded-lg hover:border-neutral-700 hover:bg-neutral-900/50 transition-all duration-200"
+              title="Create a secure invite link"
+            >
+              Invite
+            </button>
+          )}
+
           <button
             onClick={() => router.push('/')}
             className="px-2.5 sm:px-4 py-1.5 text-xs sm:text-sm text-neutral-500 hover:text-white border border-neutral-800/50 rounded-lg hover:border-neutral-700 hover:bg-neutral-900/50 transition-all duration-200"

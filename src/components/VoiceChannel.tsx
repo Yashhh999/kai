@@ -2,7 +2,9 @@
 
 import { useEffect, useState, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { Socket } from 'socket.io-client';
-import { deriveVoiceKey, encryptAudioFrame, decryptAudioFrame } from '@/lib/encryption';
+import { encryptAudioFrame, decryptAudioFrame } from '@/lib/encryption';
+import { hkdf, LABELS, EMPTY_SALT } from '@/lib/crypto/kdf';
+import { importAesKey } from '@/lib/crypto/encryption';
 
 interface VoiceParticipant {
   userId: string;
@@ -14,7 +16,10 @@ interface VoiceParticipant {
 }
 
 interface VoiceChannelProps {
+  /** Server-facing routing id (used for signaling — NOT the raw room code). */
   roomCode: string;
+  /** v2 room key material; the voice key is derived from this, never from routingId. */
+  roomKeyBytes: Uint8Array;
   socket: Socket | null;
   currentUserId: string;
   currentUsername: string;
@@ -30,6 +35,7 @@ export interface VoiceChannelRef {
 
 const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
   roomCode,
+  roomKeyBytes,
   socket,
   currentUserId,
   currentUsername,
@@ -60,17 +66,19 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
   const isJoiningRef = useRef(false);
   const inVoiceRef = useRef(false);
 
-  // Derive E2E encryption key for voice
+  // Derive the shared E2E voice key from the room key material (AES-256). It is
+  // deterministic (all participants derive the same key) but NOT derivable by the
+  // server, which only ever sees the routingId.
   useEffect(() => {
-    if (roomCode) {
-      deriveVoiceKey(roomCode).then(key => {
-        setVoiceKey(key);
-        console.log('[Voice] E2E encryption key derived');
-      }).catch(err => {
-        console.error('[Voice] Failed to derive encryption key:', err);
-      });
+    if (roomKeyBytes && roomKeyBytes.length === 32) {
+      importAesKey(hkdf(roomKeyBytes, EMPTY_SALT, LABELS.voiceKey, 32), false)
+        .then(key => {
+          setVoiceKey(key);
+          console.log('[Voice] E2E voice key derived from room key');
+        })
+        .catch(err => console.error('[Voice] Failed to derive voice key:', err));
     }
-  }, [roomCode]);
+  }, [roomKeyBytes]);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -446,7 +454,8 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
                     chunk.data = encryptedData;
                     controller.enqueue(chunk);
                   } catch (e) {
-                    controller.enqueue(chunk);
+                    // Fail CLOSED: never emit a plaintext audio frame. Drop it.
+                    console.error('[Voice] Frame encryption failed; dropping frame', e);
                   }
                 }
               });
@@ -496,7 +505,8 @@ const VoiceChannel = forwardRef<VoiceChannelRef, VoiceChannelProps>(({
                   chunk.data = decryptedData;
                   controller.enqueue(chunk);
                 } catch (e) {
-                  controller.enqueue(chunk);
+                  // Undecryptable frame — drop rather than play ciphertext noise.
+                  console.error('[Voice] Frame decryption failed; dropping frame', e);
                 }
               }
             });

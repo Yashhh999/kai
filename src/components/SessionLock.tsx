@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Lock, Unlock } from 'lucide-react';
+import { getKeyManager } from '@/lib/crypto/keyManager';
 
 interface SessionLockProps {
   onUnlock: () => void;
@@ -61,12 +62,13 @@ export default function SessionLock({ onUnlock }: SessionLockProps) {
     }
   };
 
-  const verifyPin = (enteredPin: string) => {
-    const storedPin = localStorage.getItem('session_pin');
-    
-    if (enteredPin === storedPin) {
+  const verifyPin = async (enteredPin: string) => {
+    // Unlock decrypts the sealed identity store. There is no plaintext PIN to
+    // compare — success means the Argon2id-derived key opened the committing AEAD.
+    try {
+      await getKeyManager().unlock(enteredPin);
       onUnlock();
-    } else {
+    } catch {
       const newAttempts = attempts + 1;
       setAttempts(newAttempts);
       setError(`Incorrect PIN (${newAttempts}/3 attempts)`);

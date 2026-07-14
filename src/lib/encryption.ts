@@ -134,19 +134,14 @@ export const importVoiceKey = async (keyBytes: ArrayBuffer): Promise<CryptoKey> 
   );
 };
 
-// Frame counter for unique IVs (per-sender)
-let frameCounter = 0;
-
 export const encryptAudioFrame = async (
   frame: ArrayBuffer,
   key: CryptoKey
 ): Promise<ArrayBuffer> => {
-  // Generate IV: 4 bytes counter + 8 bytes random
-  const iv = new Uint8Array(VOICE_IV_LENGTH);
-  const counterBytes = new DataView(new ArrayBuffer(4));
-  counterBytes.setUint32(0, frameCounter++, true);
-  iv.set(new Uint8Array(counterBytes.buffer), 0);
-  crypto.getRandomValues(iv.subarray(4));
+  // Fully random 12-byte IV per frame. Unlike the previous 4-byte counter (which
+  // reset to 0 on every page reload while the key stayed constant — an IV-reuse
+  // hazard for AES-GCM), a fresh random nonce cannot collide across sessions.
+  const iv = crypto.getRandomValues(new Uint8Array(VOICE_IV_LENGTH));
 
   const encrypted = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv, tagLength: VOICE_TAG_LENGTH * 8 },
