@@ -64,6 +64,37 @@ describe('KeyManager sealed store', () => {
     expect(km2.getPublicIdentity().fingerprint).toBe(pub.fingerprint);
   });
 
+  it('remembers conversations (sorted by activity) across lock/unlock', async () => {
+    const store = memStore();
+    const km = createKeyManager(store, FAST_ARGON);
+    await km.createWithPin('1234');
+    await km.upsertConversation({ id: 'r1', kind: 'room', label: 'Room 1', lastActivity: 100, routingId: 'r1', code: 'AAAA1111AAAA1111' });
+    await km.upsertConversation({ id: 'dm:PEER', kind: 'dm', label: 'peer', lastActivity: 200, peer: 'PEER' });
+    km.lock();
+
+    const km2 = createKeyManager(store, FAST_ARGON);
+    await km2.unlock('1234');
+    const convos = km2.getConversations();
+    expect(convos.map((c) => c.id)).toEqual(['dm:PEER', 'r1']); // most recent first
+    await km2.removeConversation('r1');
+    expect(km2.getConversations().map((c) => c.id)).toEqual(['dm:PEER']);
+  });
+
+  it('persists DM history and bounds/round-trips it', async () => {
+    const store = memStore();
+    const km = createKeyManager(store, FAST_ARGON);
+    await km.createWithPin('1234');
+    await km.appendDmMessage('PEER', { mine: true, text: 'hello', ts: 1 });
+    await km.appendDmMessage('PEER', { mine: false, text: 'hi', ts: 2 });
+    km.lock();
+
+    const km2 = createKeyManager(store, FAST_ARGON);
+    await km2.unlock('1234');
+    const hist = km2.getDmHistory('PEER');
+    expect(hist.map((m) => m.text)).toEqual(['hello', 'hi']);
+    expect(km2.getDmHistory('UNKNOWN')).toEqual([]);
+  });
+
   it('roomCacheKey is deterministic per routingId and locked-safe', async () => {
     const store = memStore();
     const km = createKeyManager(store, FAST_ARGON);

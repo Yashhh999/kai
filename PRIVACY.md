@@ -24,8 +24,15 @@ to, your public-key fingerprint, and message timing/sizes.
 Your messages are:
 - Encrypted on your device before they leave your browser
 - Never sent to our servers in readable form (the server cannot derive your keys)
-- Stored (decrypted) only in YOUR browser's local storage, sealed at rest
 - Automatically deleted after expiration (24 hours, or 7 days if you opt in)
+
+**On-device history:** so you don't have to re-enter room codes and so past chats
+survive a reload, your **conversation list, room keys, and direct-message history** are
+kept in the **PIN-sealed store** (encrypted at rest under your PIN). Room message
+bodies are cached in local storage per the retention window. Anyone with your unlocked
+device and PIN can read this history — forward secrecy still protects data on the
+network, not data at rest on your own device ("FS ≠ local deletion"). Use **Reset
+identity** in Profile to wipe everything.
 
 See [SECURITY.md](SECURITY.md) and [THREAT-MODEL.md](THREAT-MODEL.md) for the full model.
 

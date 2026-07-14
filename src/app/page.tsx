@@ -2,28 +2,38 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { generateRoomCode, isValidRoomCode, formatRoomCode } from '@/lib/roomCode';
-import { cleanupExpiredRooms, getAllStoredRooms, getUserPreferences, saveUserPreferences } from '@/lib/storage';
+import { generateRoomCode, isValidRoomCode } from '@/lib/roomCode';
+import { cleanupExpiredRooms, getUserPreferences } from '@/lib/storage';
 import LegalDisclaimer from '@/components/LegalDisclaimer';
 import SessionLock from '@/components/SessionLock';
 import SessionLockSetup from '@/components/SessionLockSetup';
-import { getKeyManager } from '@/lib/crypto/keyManager';
-import { formatFingerprint } from '@/lib/crypto/identity';
+import ProfilePanel from '@/components/ProfilePanel';
+import { getKeyManager, ConversationMeta } from '@/lib/crypto/keyManager';
 import { parseInvite, redeemInvite } from '@/lib/crypto/invite';
 import { stashInvite } from '@/lib/inviteSession';
+import { Identicon } from '@/lib/identicon';
+import { base64ToBytes } from '@/lib/crypto/wire';
+
+const relTime = (ts: number): string => {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+};
 
 export default function Home() {
   const router = useRouter();
   const [joinCode, setJoinCode] = useState('');
+  const [dmId, setDmId] = useState('');
   const [error, setError] = useState('');
-  const [recentRooms, setRecentRooms] = useState<string[]>([]);
   const [username, setUsername] = useState('');
-  const [extendedRetention, setExtendedRetention] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
   const [needsSetup, setNeedsSetup] = useState(false);
   const [identityReady, setIdentityReady] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [myUserId, setMyUserId] = useState('');
+  const [conversations, setConversations] = useState<ConversationMeta[]>([]);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteError, setInviteError] = useState('');
   const [invitePwFragment, setInvitePwFragment] = useState<string | null>(null);
@@ -32,35 +42,27 @@ export default function Home() {
 
   useEffect(() => {
     cleanupExpiredRooms();
-    setRecentRooms(getAllStoredRooms());
-
     const prefs = getUserPreferences();
     setUsername(prefs.username);
-    setExtendedRetention(prefs.extendedRetention);
 
-    // Identity gate: first run must create an identity (PIN-sealed); a returning
-    // user must unlock it. The identity is required before entering any room.
     const km = getKeyManager();
-    if (!km.hasSealedStore()) {
-      setNeedsSetup(true);
-    } else if (!km.isUnlocked()) {
-      setIsLocked(true);
-    } else {
-      setIdentityReady(true);
-    }
-
-    if (!prefs.username) {
-      setShowSettings(true);
-    }
+    if (!km.hasSealedStore()) setNeedsSetup(true);
+    else if (!km.isUnlocked()) setIsLocked(true);
+    else setIdentityReady(true);
   }, []);
+
+  const refresh = () => {
+    const km = getKeyManager();
+    if (!km.isUnlocked()) return;
+    setMyUserId(km.getPublicIdentity().fingerprint);
+    setConversations(km.getConversations());
+    setUsername(getUserPreferences().username);
+  };
 
   useEffect(() => {
     if (identityReady) {
-      try {
-        setMyUserId(getKeyManager().getPublicIdentity().fingerprint);
-      } catch {
-        /* locked */
-      }
+      refresh();
+      if (!getUserPreferences().username) setShowProfile(true); // first run: set a name
     }
   }, [identityReady]);
 
@@ -70,13 +72,13 @@ export default function Home() {
     try {
       const parsed = parseInvite(fragment);
       if (parsed.token.pwSalt && !password) {
-        setInvitePwFragment(fragment); // ask for the password
+        setInvitePwFragment(fragment);
         setInviteBusy(false);
         return;
       }
       const { roomKeyBytes, routingId, issuerFingerprint } = await redeemInvite(parsed, { password });
       stashInvite(routingId, roomKeyBytes, issuerFingerprint);
-      history.replaceState(null, '', window.location.pathname); // scrub the secret from the URL
+      history.replaceState(null, '', window.location.pathname);
       router.push(`/room/${routingId}`);
     } catch (e) {
       console.error('Invite redemption failed:', e);
@@ -85,7 +87,6 @@ export default function Home() {
     }
   };
 
-  // Redeem an invite link (#i=…) once the identity is unlocked.
   useEffect(() => {
     if (!identityReady || inviteHandledRef.current) return;
     const hash = typeof window !== 'undefined' ? window.location.hash : '';
@@ -96,69 +97,67 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identityReady]);
 
-  const savePreferences = () => {
-    if (!username.trim()) {
-      setError('Username is required');
-      return;
+  const requireUnlocked = () => {
+    if (!getKeyManager().isUnlocked()) {
+      setIsLocked(true);
+      return false;
     }
-    saveUserPreferences({ username: username.trim(), extendedRetention });
-    setShowSettings(false);
-    setError('');
+    return true;
   };
 
   const handleCreateRoom = () => {
-    if (!getKeyManager().isUnlocked()) {
-      setIsLocked(true);
-      return;
-    }
-    if (!username.trim()) {
-      setShowSettings(true);
-      setError('Set your username first');
-      return;
-    }
-    const roomCode = generateRoomCode();
-    router.push(`/room/${roomCode}`);
+    if (!requireUnlocked()) return;
+    if (!username.trim()) { setShowProfile(true); return; }
+    router.push(`/room/${generateRoomCode()}`);
   };
 
-  const handleJoinRoom = (code?: string) => {
-    if (!getKeyManager().isUnlocked()) {
-      setIsLocked(true);
-      return;
-    }
-    if (!username.trim()) {
-      setShowSettings(true);
-      setError('Set your username first');
-      return;
-    }
-
-    const codeToJoin = code || joinCode.replace(/-/g, '').toUpperCase();
-    
-    if (!isValidRoomCode(codeToJoin)) {
-      setError('Invalid room code');
-      return;
-    }
-
+  const handleJoinRoom = () => {
+    if (!requireUnlocked()) return;
+    if (!username.trim()) { setShowProfile(true); return; }
+    const code = joinCode.replace(/-/g, '').toUpperCase();
+    if (!isValidRoomCode(code)) { setError('Invalid room code'); return; }
     setError('');
-    router.push(`/room/${codeToJoin}`);
+    router.push(`/room/${code}`);
   };
+
+  const handleNewDm = () => {
+    if (!requireUnlocked()) return;
+    const peer = dmId.replace(/[-\s]/g, '').toUpperCase();
+    router.push(peer ? `/dm?peer=${peer}` : '/dm');
+  };
+
+  const openConversation = (c: ConversationMeta) => {
+    if (!requireUnlocked()) return;
+    if (c.kind === 'dm' && c.peer) return void router.push(`/dm?peer=${c.peer}`);
+    if (c.kind === 'room') {
+      if (c.code) return void router.push(`/room/${c.code}`);
+      if (c.routingId && c.roomKeyBytes) {
+        stashInvite(c.routingId, base64ToBytes(c.roomKeyBytes), '');
+        router.push(`/room/${c.routingId}`);
+      }
+    }
+  };
+
+  const removeConversation = async (id: string) => {
+    await getKeyManager().removeConversation(id);
+    refresh();
+  };
+
+  const card = 'bg-neutral-900/70 backdrop-blur-xl border border-neutral-800 rounded-2xl shadow-2xl';
 
   return (
     <>
       {needsSetup && (
-        <SessionLockSetup
-          onComplete={() => {
-            setNeedsSetup(false);
-            setIdentityReady(true);
-          }}
-          onCancel={() => { /* identity setup is mandatory */ }}
-        />
+        <SessionLockSetup onComplete={() => { setNeedsSetup(false); setIdentityReady(true); }} onCancel={() => {}} />
       )}
       {isLocked && (
-        <SessionLock
-          onUnlock={() => {
-            setIsLocked(false);
-            setIdentityReady(true);
-          }}
+        <SessionLock onUnlock={() => { setIsLocked(false); setIdentityReady(true); }} />
+      )}
+      {showProfile && (
+        <ProfilePanel
+          onClose={() => { setShowProfile(false); refresh(); }}
+          onLocked={() => { setShowProfile(false); setIdentityReady(false); setIsLocked(true); }}
+          onUsernameChange={(n) => setUsername(n)}
         />
       )}
       {(invitePwFragment || inviteBusy) && (
@@ -183,16 +182,12 @@ export default function Home() {
                   <button
                     onClick={() => invitePwFragment && processInvite(invitePwFragment, invitePassword)}
                     disabled={inviteBusy || !invitePassword}
-                    className="flex-1 bg-white text-black py-2.5 rounded-xl font-medium hover:bg-neutral-200 active:scale-95 transition-all text-sm disabled:opacity-50"
+                    className="flex-1 bg-white text-black py-2.5 rounded-xl font-medium hover:bg-neutral-200 text-sm disabled:opacity-50"
                   >
                     {inviteBusy ? 'Joining…' : 'Join'}
                   </button>
                   <button
-                    onClick={() => {
-                      setInvitePwFragment(null);
-                      setInviteError('');
-                      history.replaceState(null, '', window.location.pathname);
-                    }}
+                    onClick={() => { setInvitePwFragment(null); setInviteError(''); history.replaceState(null, '', window.location.pathname); }}
                     className="px-4 py-2.5 text-neutral-400 hover:text-white border border-neutral-800 rounded-xl text-sm"
                   >
                     Cancel
@@ -208,189 +203,112 @@ export default function Home() {
           {inviteError}
         </div>
       )}
-      <div className="min-h-screen bg-black flex items-center justify-center p-4">
-      <LegalDisclaimer />
-      <div className="max-w-md w-full space-y-6">
-        <div className="text-center space-y-2">
-          <h1 className="text-4xl sm:text-5xl font-bold text-white tracking-tight">kai</h1>
-          <p className="text-sm text-neutral-500">Ephemeral conversations. Zero traces.</p>
-        </div>
 
-        {showSettings ? (
-          <div className="bg-neutral-900/70 backdrop-blur-xl border border-neutral-800 rounded-2xl p-6 space-y-4 shadow-2xl">
-            <h2 className="text-lg font-semibold text-white">Settings</h2>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm text-neutral-400 mb-2 block font-medium">Username</label>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Your display name"
-                  className="w-full bg-black/50 border border-neutral-800 rounded-xl px-4 py-2.5 text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:ring-2 focus:ring-white/50 transition-all"
-                  maxLength={20}
-                />
-              </div>
-              <div className="space-y-3 pt-4 border-t border-neutral-800">
-                <div>
-                  <p className="text-sm font-medium text-white">Your User ID</p>
-                  <p className="text-xs text-neutral-500 mt-1">
-                    Your cryptographic identity. Share it to let others verify you.
-                  </p>
-                </div>
-                {myUserId && (
-                  <div className="bg-black/50 border border-neutral-800 rounded-xl px-4 py-2.5 font-mono text-xs text-emerald-300 break-all select-all">
-                    {formatFingerprint(myUserId)}
-                  </div>
-                )}
-                <button
-                  onClick={() => {
-                    getKeyManager().lock();
-                    setIdentityReady(false);
-                    setIsLocked(true);
-                  }}
-                  className="w-full bg-white text-black py-2.5 rounded-xl font-medium hover:bg-neutral-200 active:scale-95 transition-all text-sm shadow-lg"
-                >
-                  🔒 Lock Now
-                </button>
-              </div>
-              <div className="flex items-center justify-between pt-4 border-t border-neutral-800">
-                <div>
-                  <div className="text-sm text-neutral-300 font-medium">Extended Retention</div>
-                  <div className="text-xs text-neutral-600">7 days instead of 24 hours</div>
-                </div>
-                <button
-                  onClick={() => setExtendedRetention(!extendedRetention)}
-                  className={`w-12 h-6 rounded-full transition-all ${
-                    extendedRetention ? 'bg-white' : 'bg-neutral-700'
-                  }`}
-                >
-                  <div className={`w-5 h-5 bg-black rounded-full transition-transform shadow-lg ${
-                    extendedRetention ? 'translate-x-6' : 'translate-x-1'
-                  }`} />
-                </button>
-              </div>
-              {error && <p className="text-sm text-red-400 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
-              <div className="flex gap-2 pt-2">
-                <button
-                  onClick={savePreferences}
-                  className="flex-1 bg-white text-black py-2.5 rounded-xl font-medium hover:bg-neutral-200 active:scale-95 transition-all text-sm shadow-lg"
-                >
-                  Save
-                </button>
-                {getUserPreferences().username && (
-                  <button
-                    onClick={() => { setShowSettings(false); setError(''); }}
-                    className="px-4 py-2.5 text-neutral-400 hover:text-white border border-neutral-800 rounded-xl hover:bg-neutral-800/50 transition-all"
-                  >
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </div>
+      <div className="min-h-screen bg-black flex items-center justify-center p-4">
+        <LegalDisclaimer />
+        <div className="max-w-md w-full space-y-5">
+          {/* Brand */}
+          <div className="text-center space-y-1 pt-2">
+            <h1 className="text-4xl sm:text-5xl font-bold text-white tracking-tight">kai</h1>
+            <p className="text-sm text-neutral-500">Ephemeral, end-to-end encrypted chat.</p>
           </div>
-        ) : (
-          <>
-            <div className="bg-neutral-900/70 backdrop-blur-xl border border-neutral-800 rounded-2xl p-6 space-y-4 shadow-2xl">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-white">New Room</h2>
-                  <p className="text-sm text-neutral-500 mt-0.5">Logged in as <span className="text-white font-medium">{username}</span></p>
-                </div>
-                <button
-                  onClick={() => setShowSettings(true)}
-                  className="text-xs text-neutral-500 hover:text-white border border-neutral-800 rounded-lg px-3 py-1.5 hover:bg-neutral-800/50 transition-all font-medium"
-                >
-                  Settings
-                </button>
-              </div>
-              <button
-                onClick={handleCreateRoom}
-                className="w-full bg-white text-black py-3 rounded-xl font-medium hover:bg-neutral-200 active:scale-95 transition-all text-sm shadow-lg"
-              >
-                Create Room
+
+          {/* Profile row */}
+          <button
+            onClick={() => setShowProfile(true)}
+            className={`${card} w-full p-3 flex items-center gap-3 hover:border-neutral-700 transition-all text-left`}
+          >
+            {myUserId ? <Identicon seed={myUserId} size={44} /> : <div className="w-11 h-11 rounded-xl bg-neutral-800" />}
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-white truncate">{username || 'Set up your profile'}</p>
+              <p className="text-xs text-neutral-500">Profile &amp; settings</p>
+            </div>
+            <span className="text-neutral-600 text-xs border border-neutral-800 rounded-lg px-2.5 py-1">Profile</span>
+          </button>
+
+          {/* Primary actions */}
+          <div className={`${card} p-5 space-y-4`}>
+            <button
+              onClick={handleCreateRoom}
+              className="w-full bg-white text-black py-3 rounded-xl font-semibold hover:bg-neutral-200 active:scale-[0.98] transition-all text-sm shadow-lg"
+            >
+              + Create a Room
+            </button>
+
+            <div className="flex items-center gap-3 text-[11px] text-neutral-600">
+              <div className="h-px bg-neutral-800 flex-1" /> OR JOIN ONE <div className="h-px bg-neutral-800 flex-1" />
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                value={joinCode}
+                onChange={(e) => { setJoinCode(e.target.value); setError(''); }}
+                onKeyDown={(e) => e.key === 'Enter' && handleJoinRoom()}
+                placeholder="Room code"
+                className="flex-1 bg-black/50 border border-neutral-800 rounded-xl px-4 py-2.5 text-neutral-100 placeholder-neutral-600 focus:outline-none focus:ring-2 focus:ring-white/40 font-mono text-sm"
+                maxLength={19}
+              />
+              <button onClick={handleJoinRoom} className="px-5 bg-neutral-800 text-white rounded-xl text-sm font-medium hover:bg-neutral-700 border border-neutral-700">
+                Join
               </button>
             </div>
 
-            <div className="bg-neutral-900/70 backdrop-blur-xl border border-neutral-800 rounded-2xl p-6 space-y-4 shadow-2xl">
-              <h2 className="text-lg font-semibold text-white">Join Room</h2>
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  value={joinCode}
-                  onChange={(e) => { setJoinCode(e.target.value); setError(''); }}
-                  placeholder="XXXX-XXXX-XXXX-XXXX"
-                  className="w-full bg-black/50 border border-neutral-800 rounded-xl px-4 py-3 text-neutral-100 placeholder-neutral-600 focus:outline-none focus:ring-2 focus:ring-white/50 font-mono text-sm transition-all"
-                  maxLength={19}
-                />
-                {error && !showSettings && <p className="text-sm text-red-400 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
-                <button
-                  onClick={() => handleJoinRoom()}
-                  className="w-full bg-neutral-800 text-white py-3 rounded-xl font-medium hover:bg-neutral-700 active:scale-95 transition-all border border-neutral-700 shadow-lg"
-                >
-                  Join
-                </button>
-              </div>
+            <div className="flex gap-2 pt-1">
+              <input
+                value={dmId}
+                onChange={(e) => setDmId(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleNewDm()}
+                placeholder="Direct message a User ID"
+                className="flex-1 bg-black/50 border border-neutral-800 rounded-xl px-4 py-2.5 text-neutral-100 placeholder-neutral-600 focus:outline-none focus:ring-2 focus:ring-white/40 font-mono text-sm"
+              />
+              <button onClick={handleNewDm} className="px-5 bg-neutral-800 text-white rounded-xl text-sm font-medium hover:bg-neutral-700 border border-neutral-700">
+                Chat
+              </button>
             </div>
+            {error && <p className="text-sm text-red-400 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+          </div>
 
-            <button
-              onClick={() => {
-                if (!getKeyManager().isUnlocked()) { setIsLocked(true); return; }
-                router.push('/dm');
-              }}
-              className="w-full bg-neutral-900/70 backdrop-blur-xl border border-neutral-800 rounded-2xl p-4 text-left hover:border-neutral-700 hover:bg-neutral-800/50 transition-all shadow-2xl flex items-center justify-between"
-            >
-              <div>
-                <h2 className="text-sm font-semibold text-white">Direct Messages</h2>
-                <p className="text-xs text-neutral-500 mt-0.5">1:1 chat by User ID (forward-secret)</p>
-              </div>
-              <span className="text-neutral-500">→</span>
-            </button>
-
-            {recentRooms.length > 0 && (
-              <div className="bg-neutral-900/70 backdrop-blur-xl border border-neutral-800 rounded-2xl p-6 space-y-4 shadow-2xl">
-                <h2 className="text-lg font-semibold text-white">Recent Rooms</h2>
-                <div className="space-y-2">
-                  {recentRooms.slice(0, 3).map((roomCode) => (
-                    <button
-                      key={roomCode}
-                      onClick={() => handleJoinRoom(roomCode)}
-                      className="w-full bg-black/50 border border-neutral-800 rounded-xl px-4 py-3 text-neutral-100 hover:border-neutral-700 hover:bg-neutral-800/50 transition-all text-left font-mono text-sm group"
-                    >
-                      <span className="group-hover:tracking-wider transition-all duration-200">{formatRoomCode(roomCode)}</span>
-                    </button>
-                  ))}
+          {/* Recent conversations */}
+          {conversations.length > 0 && (
+            <div className={`${card} p-4 space-y-1`}>
+              <h2 className="text-xs font-semibold text-neutral-400 px-1 mb-1">RECENT</h2>
+              {conversations.slice(0, 8).map((c) => (
+                <div key={c.id} className="group flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-neutral-800/50 transition-colors">
+                  <button onClick={() => openConversation(c)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                    <Identicon seed={c.kind === 'room' ? c.routingId || c.id : c.peer || c.id} size={36} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-neutral-100 truncate font-medium">
+                        {c.kind === 'dm' ? `DM · ${c.label}` : c.label}
+                      </p>
+                      <p className="text-[11px] text-neutral-500">{relTime(c.lastActivity)}</p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => removeConversation(c.id)}
+                    className="opacity-0 group-hover:opacity-100 text-neutral-600 hover:text-red-400 px-2 transition-all"
+                    title="Remove from recents"
+                  >
+                    ✕
+                  </button>
                 </div>
-              </div>
-            )}
-          </>
-        )}
+              ))}
+            </div>
+          )}
 
-        <div className="grid grid-cols-3 gap-6 text-center pt-2">
-          <div className="p-3 rounded-xl bg-neutral-900/50 border border-neutral-800/50">
-            <div className="text-2xl mb-1.5">🔒</div>
-            <p className="text-xs text-neutral-500 font-medium">End-to-End</p>
+          {/* Footer */}
+          <div className="flex items-center justify-center gap-4 text-[11px] text-neutral-600 pt-1">
+            <span>🔒 E2E encrypted</span>
+            <span>·</span>
+            <span>💾 Local-first</span>
+            <span>·</span>
+            <span>⏱️ Ephemeral</span>
           </div>
-          <div className="p-3 rounded-xl bg-neutral-900/50 border border-neutral-800/50">
-            <div className="text-2xl mb-1.5">💾</div>
-            <p className="text-xs text-neutral-500 font-medium">Local First</p>
+          <div className="flex justify-center gap-6 text-xs text-neutral-600">
+            <a href="/terms" className="hover:text-neutral-400 transition-colors">Terms</a>
+            <a href="/privacy" className="hover:text-neutral-400 transition-colors">Privacy</a>
           </div>
-          <div className="p-3 rounded-xl bg-neutral-900/50 border border-neutral-800/50">
-            <div className="text-2xl mb-1.5">⏱️</div>
-            <p className="text-xs text-neutral-500 font-medium">Ephemeral</p>
-          </div>
-        </div>
-
-        <div className="flex justify-center gap-6 text-xs text-neutral-600 pt-4">
-          <a href="/terms" className="hover:text-neutral-400 transition-colors">
-            Terms
-          </a>
-          <a href="/privacy" className="hover:text-neutral-400 transition-colors">
-            Privacy
-          </a>
         </div>
       </div>
-    </div>
     </>
   );
 }

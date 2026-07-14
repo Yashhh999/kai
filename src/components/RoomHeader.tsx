@@ -2,6 +2,7 @@
 
 import { formatRoomCode } from '@/lib/roomCode';
 import { formatSafetyNumber } from '@/lib/crypto/safetyNumber';
+import { Identicon } from '@/lib/identicon';
 import { useRouter } from 'next/navigation';
 import { useState, RefObject } from 'react';
 import { VoiceChannelRef } from '@/components/VoiceChannel';
@@ -23,9 +24,11 @@ interface RoomHeaderProps {
   roomSafetyNumber?: string;
   /** Opens the invite-creation modal. Absent for legacy rooms. */
   onInvite?: () => void;
+  /** Seed for the room's pixel-art logo (the routingId). */
+  logoSeed?: string;
 }
 
-export default function RoomHeader({ roomCode, users, extendedRetention, onToggleRetention, voiceChannelRef, isInVoice, voiceParticipantCount, roomSafetyNumber, onInvite }: RoomHeaderProps) {
+export default function RoomHeader({ roomCode, users, extendedRetention, onToggleRetention, voiceChannelRef, isInVoice, voiceParticipantCount, roomSafetyNumber, onInvite, logoSeed }: RoomHeaderProps) {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
@@ -41,6 +44,7 @@ export default function RoomHeader({ roomCode, users, extendedRetention, onToggl
     <div className="border-b border-neutral-900 bg-black/50 backdrop-blur-xl p-3 sm:p-4 relative">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+          {logoSeed && <Identicon seed={logoSeed} size={36} className="shrink-0" />}
           <div className="min-w-0 flex-1">
             <h2 className="text-sm sm:text-base font-medium text-white/90">Room</h2>
             <button

@@ -15,7 +15,8 @@ import { deriveKeyLegacy, decryptMessageLegacy } from '@/lib/crypto/legacy';
 import { detectVersion, RoomEnvelopeV2 } from '@/lib/crypto/protocol';
 import { roomSafetyNumber as computeRoomSafetyNumber } from '@/lib/crypto/safetyNumber';
 import { encryptRoomBlob, decryptRoomBlob } from '@/lib/crypto/fileTransfer';
-import { utf8ToBytes, bytesToUtf8 } from '@/lib/crypto/wire';
+import { utf8ToBytes, bytesToUtf8, bytesToBase64 } from '@/lib/crypto/wire';
+import { formatRoomCode } from '@/lib/roomCode';
 import { saveRoomData, loadRoomData, Message, getUserPreferences, saveUserPreferences, migrateLegacyRoom } from '@/lib/storage';
 import { readStashedInvite } from '@/lib/inviteSession';
 import InviteModal from '@/components/InviteModal';
@@ -102,6 +103,18 @@ export default function RoomPage() {
       setRoutingId(ctx.routingId);
       setRoomKeyBytes(ctx.roomKeyBytes);
       setRoomSafetyNum(computeRoomSafetyNumber(ctx.roomSafetySeed));
+
+      // Remember this room so it appears in "Recent" and can be reopened without the
+      // code. Store the room key (sealed) for keyed reopen; keep the code for code-rooms.
+      km.upsertConversation({
+        id: ctx.routingId,
+        kind: 'room',
+        routingId: ctx.routingId,
+        code: stashed ? undefined : roomCode,
+        roomKeyBytes: bytesToBase64(ctx.roomKeyBytes),
+        label: stashed ? 'Invited room' : formatRoomCode(roomCode),
+        lastActivity: Date.now(),
+      }).catch(() => {});
 
       // Migrate any legacy room-code-keyed cache into the routingId cache (code mode only).
       if (!stashed) await migrateLegacyRoom(roomCode, ctx.routingId);
@@ -701,6 +714,7 @@ export default function RoomPage() {
           voiceParticipantCount={voiceParticipantCount}
           roomSafetyNumber={roomSafetyNum}
           onInvite={roomKeyBytes ? () => setShowInvite(true) : undefined}
+          logoSeed={routingId || undefined}
         />
       <ChatMessages 
         messages={messages} 
