@@ -12,6 +12,7 @@
   "dependencies": {
     "@noble/curves": "^2.2.0",
     "@noble/hashes": "^2.2.0",
+    "@openpanel/nextjs": "^1.5.1",
     "browser-image-compression": "^2.0.2",
     "lucide-react": "^0.561.0",
     "next": "16.0.10",
